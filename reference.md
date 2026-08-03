@@ -102,3 +102,55 @@ If `Avail` did not move, the real hog is elsewhere — rescan, don't delete more
 - User Documents / Desktop / Downloads content.
 - Any project code or `.git`.
 - System files; anything under `/System` (except nothing — just don't).
+
+## Quarantine / rollback 隔离与回滚
+
+`clean.sh --yes` (without `--purge`) moves targets to:
+
+```text
+~/.cache/apfs-spa-quarantine/<YYYYMMDD-HHMMSS>/<relative-path>
+```
+
+并写入 `MANIFEST.tsv`（`original_path<TAB>rel`）。
+
+```bash
+./scripts/clean.sh --list-quarantine
+./scripts/clean.sh --restore 20260803-170511   # stamp from list
+```
+
+- Collisions: if the original path already exists again, restore **skips** that item (no overwrite).
+- T1 caches: even after `--purge`, next build usually re-downloads — soft rollback.
+- Override roots: `APFS_SPA_HOME`, `APFS_SPA_QUARANTINE`（仅自测/高级用途）。
+- Red line: `com.tencent.xinWeChat` / `com.tencent.WeWorkMac` / `com.tencent.wwmapp` → exit 2 unless `APFS_SPA_ALLOW_REDLINE=1`.
+
+## JSON report schema（scan.sh --json）
+
+```json
+{
+  "skill": "mac-storage-governance",
+  "schema_version": 1,
+  "read_only": true,
+  "disk": { "root": {}, "data": {} },
+  "summary": { "t1_bytes": 0, "t2_bytes": 0, "t3_bytes": 0, "t4_bytes": 0 },
+  "findings": [
+    { "tier": "T1", "action": "safe_to_clean", "label": "CocoaPods", "path": "...", "bytes": 0, "human": "1.1G" }
+  ],
+  "agent_hint": "..."
+}
+```
+
+`action`: `safe_to_clean` | `ask_first` | `forbidden`.
+
+## Multi-agent install paths
+
+| Host | Path |
+|------|------|
+| Cursor | `~/.cursor/skills/mac-storage-governance` |
+| WorkBuddy | `~/.workbuddy/skills/mac-storage-governance` |
+| Codex | `~/.agents/skills/mac-storage-governance` (also `~/.codex/skills`) |
+| Generic | `~/.agents/skills/mac-storage-governance` |
+| Manus | Upload / GitHub import — cloud VM disk ≠ user Mac |
+
+Use `./scripts/install.sh` to symlink one clone into the local hosts above.
+
+Regression: `./scripts/selftest.sh`.
