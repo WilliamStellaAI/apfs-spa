@@ -25,13 +25,17 @@
 ### 整套流程
 
 ```text
-管家自我介绍
+管家自我介绍（若有未粉碎隔离区，开场必提）
     → 你说「开扫」
     → 扫描 + Canvas 占用关系图（四色可筛选）
     → 你决定：锁哪些 / 清哪些
-    → 确认后 clean（默认进隔离区）
-    → df 验收；不对就 --restore
+    → 确认后 clean（默认进隔离区；App 可能像重置，空间暂不腾空）
+    → 人话清单：时间戳 / 如何恢复；你点头后再粉碎
+    → df 验收
 ```
+
+**隔离 ≠ 腾空：** 文件还在 `~/.cache/apfs-spa-quarantine/<时间戳>/`。确认不要了再删 stamp / purge，可用空间才会明显上升。误判可 `--restore`。  
+脚本级「请读我 / 冷却期禁 purge / 系统通知 / sessionStart 注入」等见 `SKILL.md`「待拍板的硬增强」（尚未全部落地）。
 
 清理 **`~/Library/Containers`（卸掉的 App 沙盒）** 时，macOS 可能要求给 Cursor 开 **「完全磁盘访问」**；缓存类路径通常不用。
 
@@ -178,7 +182,7 @@ mac-storage-governance/          # GitHub 品牌目录名常为 apfs-spa
 | 续作 | `state.sh` |
 | 回归 | `selftest.sh` |
 
-尚未做：CI 金丝雀矩阵、多机策略包。
+尚未做 / 待拍板：隔离区「请读我」与冷却期禁 purge、系统通知、sessionStart 注入、CI 金丝雀、多机策略包（见 `SKILL.md`「待拍板的硬增强」）。
 
 ---
 

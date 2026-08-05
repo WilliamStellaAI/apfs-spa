@@ -1,10 +1,11 @@
 # Session handoff — apfs-spa / mac-storage-governance
 
-Last updated: 2026-08-04
+Last updated: 2026-08-05
 
 ## What this skill is now
 
-Executable local harness (not docs-only): **intro first** → scan → scripted Canvas → SQLite ledger (snapshots/actions/locks) → clean with hard gates → optional Cursor shell hook against `rm`.
+Executable local harness: **intro first** → scan → scripted Canvas → SQLite ledger → clean with hard gates → optional Cursor shell hook.  
+Quarantine UX (consequences / post-clean checklist / remind pending stamps) is in SKILL; script-hard follow-ups are **待拍板**.
 
 ## Paths (per-user, per-Mac)
 
@@ -16,31 +17,32 @@ Executable local harness (not docs-only): **intro first** → scan → scripted 
 | State machine | `~/.cache/apfs-spa/state.json` |
 | Quarantine | `~/.cache/apfs-spa-quarantine/<stamp>/` |
 | Cursor user hook | `~/.cursor/hooks.json` → `cursor-hook-shell-guard.py` |
-| Canvas (this workspace) | `~/.cursor/projects/Users-nirass-cursor-skills-mac-storage-governance/canvases/mac-disk-architecture.canvas.tsx` |
 
 ## Decisions locked in
 
-- User-facing cleanup labels: 不要动 / 疑似卸载残留 / 先确认还在用不 / 可以清 (not raw T1–T4).
-- Canvas is the default architecture deliverable; HTML optional.
-- Locks and history live in SQLite and are enforced by `clean.sh` + Cursor hook — not by markdown memory.
-- Default clean path is quarantine (restorable); `--purge` only on explicit request.
-- System seed locks: WeChat/WeCom bundles + `Documents` prefix.
-- **Persona:** APFS Spa 磁盘管家 — SKILL「对用户的开场」before scan/clean.
+- User-facing labels: 不要动 / 疑似卸载残留 / 先确认还在用不 / 可以清  
+- Canvas default; HTML optional  
+- Locks in SQLite enforced by `clean.sh` + shell hook  
+- Quarantine by default; purge only on explicit destroy  
+- System locks: WeChat/WeCom + Documents  
+- Persona intro before scan; quarantine UX in「隔离区与误判」  
 
 ## Agent must
 
-0. **First touch:** deliver capabilities + usage guide + flow intro, then ask 开扫 / 先锁 / 先看空间  
-1. `state.sh resume-hint` + `ledger.sh status` (can run with/after intro)  
-2. `scan.sh --json` then `render-architecture-canvas.sh` (do not hand-author full canvas)  
-3. Wait for user confirm / `ledger.sh lock` before `clean.sh --yes`  
-4. Never `rm` locked paths; use `clean.sh`  
-5. If `mv` Containers fails: explain Full Disk Access; do not claim success  
+0. First touch: intro → ask 开扫 / 先锁 / 先看空间  
+1. `resume-hint` + `ledger status` + **list quarantine**; remind if stamps exist  
+2. Scan JSON → `render-architecture-canvas.sh`  
+3. Before `--yes`: explain App-reset + space frees only after purge  
+4. After quarantine: what / size / stamp / restore; never silent Done  
+5. No purge without explicit「不要了/粉碎」  
+6. No `rm` on locked paths; FDA note if Containers `mv` fails  
 
-## Not done yet
+## 待拍板硬增强（未实现）
 
-- CI canary matrix  
-- Multi-machine policy packs  
+请读我.txt · purge 冷却期 · osascript 通知 · 隔离回执 · sessionStart 注入 · LaunchAgent  
+
+Also not done: CI canary · multi-machine policies  
 
 ## Secrets
 
-None in this doc. Do not put signed URLs or credentials here.
+None.

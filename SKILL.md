@@ -56,6 +56,8 @@ Windows/Linux；也不擅自清你的文档、相册、项目源码、正在用�
 
 清理 **应用沙盒**（卸掉的 App 残留那种）时，若系统拦着，需要给 Cursor 开「完全磁盘访问」——到时候我会提醒你。
 
+**隔离 ≠ 腾空：** 默认只是把文件挪到隔离区，对应 App 会像「数据没了/像重装」；**磁盘占用要等你确认粉碎隔离区才会下降**。清错了可以说「恢复某某时间戳」。
+
 你现在想：**先看一眼空间**、**直接开扫出图**，还是 **先把某类目录锁上**？
 
 ---
@@ -68,7 +70,49 @@ Windows/Linux；也不擅自清你的文档、相册、项目源码、正在用�
 
 介绍说完并等待用户选择时，可在后台准备（**仍不要 clean --yes**）：
 1. 确认 skill 目录与脚本可执行  
-2. `state.sh resume-hint` + `ledger.sh status`（若有未完成进度，介绍末尾加一句：「上次好像停在等你确认，要接着还是重新扫？」）
+2. `state.sh resume-hint` + `ledger.sh status`  
+3. **`clean.sh --list-quarantine`（或看 `~/.cache/apfs-spa-quarantine/`）**  
+   - 若存在未粉碎的隔离时间戳：介绍末尾**必须**加一句人话，例如：  
+     「你还有未确认的隔离区（时间戳 …）。要查看列表、恢复，还是确认不要了再粉碎？空间要粉碎后才会腾出来。」  
+   - 若有未完成进度（awaiting_confirm / cleaned）：「上次好像停在等你确认，要接着还是重新扫？」
+
+---
+
+## 隔离区与误判（Agent 必守 · 仍须诚实：规则≠硬闸）
+
+### 用户怎么感知「被隔离了」
+
+| 事实 | 对用户的影响 |
+|------|----------------|
+| 默认是 **mv 到隔离区**，不是立刻删光 | 同盘搬家：`df` **往往暂时不变** |
+| App 仍去原路径找数据 | 像重装/设置没了；**不会**自动去隔离区读 |
+| 人可在访达打开隔离目录，或 `--restore` | 在你 purge 之前一般能找回 |
+
+**清前必须说清后果（白话，勿省略）：**  
+「我会先隔离，不粉碎。相关 App 可能像数据重置；可用空间要等你说不要了再粉碎才会涨。后悔了用恢复。」
+
+**清后必须立刻给人话清单（禁止只说 Done）：**
+1. 隔离了哪些（应用名 + 大约大小）  
+2. 时间戳（`--restore <stamp>` 用）  
+3. 明确问：要不要现在试一下相关 App？要恢复还是过几天再决定粉碎？  
+4. **禁止**在用户未明确说「不要了 / 粉碎 / purge」时执行 `--purge` 或 `rm` 隔离区  
+
+**下次开场：** 有未粉碎隔离区时，优先提醒，不要等用户自己想起来。
+
+### 规则的边界（对用户也可诚实说明）
+
+以上仍是 **Agent 契约**。模型可能漏说。更硬的保障（脚本/系统通知/冷却期禁 purge 等）见下方「待拍板的硬增强」——**尚未全部脚本化**，拍板前先靠契约 + 已有 ledger/lock。
+
+### 待拍板的硬增强（记录意向 · 暂不实现）
+
+用户确认要做时再改脚本，候选：
+
+1. 每次隔离自动写 `请读我.txt` 到 stamp 目录（访达可见）  
+2. `--purge` 默认拒绝未满冷却期（如 72h）的 stamp，除非显式环境变量  
+3. 隔离成功后系统通知（`osascript`）  
+4. 可选桌面/缓存「隔离回执」文件  
+5. Cursor `sessionStart` hook：有未确认隔离则**注入**上下文（不靠模型想起）  
+6. 定时 LaunchAgent 提醒（更重）
 
 ---
 
@@ -83,9 +127,10 @@ Windows/Linux；也不擅自清你的文档、相册、项目源码、正在用�
 | **边界** | 只管 **本机 macOS 用户目录里可再生的缓存 / 明确不用的模拟器 / 已卸载 App 残留**。不管 Windows/Linux，也不替你清 iCloud/相册/项目源码。**不穷尽每一个文件**——全局只要顶层清楚 |
 | **适用** | 磁盘告急、本地 iOS/Android 构建失败、`No space left`、或你说「扫一下磁盘 / 腾点空间 / 画个架构图」 |
 | **风险** | 「可以清」几乎无风险（下次会再下）；工具链与疑似残留 **必须你点头**；正在用的微信等 **默认禁止删** |
-| **误删回滚** | 脚本默认把东西 **挪到隔离区**（不是立刻粉碎）。缓存类也可重新下载；隔离区可整份搬回。详见下方「回滚」 |
+| **误删回滚** | 脚本默认把东西 **挪到隔离区**（不是立刻粉碎）。缓存类也可重新下载；隔离区可整份搬回。详见「隔离区与误判」「回滚」 |
 
-**给 Agent 的硬规则：** **先对用户做开场介绍（见上）** → 只读扫描 → 用 **关系图 + 白话清理建议** 汇报 → **等用户选定 / 上锁再清理** → 每步前后打 `df`。不要自作主张清「先确认 / 不要动」项。用户说「别动某某」时必须 `ledger.sh lock`，不能只记在聊天里。
+**给 Agent 的硬规则：** **先对用户做开场介绍（见上）** → 只读扫描 → 用 **关系图 + 白话清理建议** 汇报 → **等用户选定 / 上锁再清理** → 清前讲后果、清后给人话清单 → 每步前后打 `df`。有未粉碎隔离区必须在开场提醒。不要自作主张清「先确认 / 不要动」项。用户说「别动某某」时必须 `ledger.sh lock`，不能只记在聊天里。
+
 ### Harness 当前版本能力清单（整合）
 
 本 skill 已是可执行 harness，不只是文档约定。组件与落盘位置：
@@ -254,15 +299,17 @@ df 验收 → state.sh record-verify
 - 不要在未确认时把「先确认 / 不要动」画成可一键清。
 - 不要用平铺长列表代替节点关系图（清单是图的补充，不是替代）。
 
-### 回滚怎么做（若误删）
+### 回滚怎么做（若误删 / 误隔离）
 
 1. **默认安全路径**：`scripts/clean.sh` 把目标 `mv` 到  
-   `~/.cache/apfs-spa-quarantine/<时间戳>/`，并写 `MANIFEST.tsv`（原路径 ↔ 隔离相对路径），**不是**直接 `rm -rf`。
+   `~/.cache/apfs-spa-quarantine/<时间戳>/`，并写 `MANIFEST.tsv`（原路径 ↔ 隔离相对路径），**不是**直接 `rm -rf`。  
+   对 App 而言数据已不在原位；对磁盘而言占用往往还在，直到粉碎该 stamp。
 2. **恢复**：`./scripts/clean.sh --restore <时间戳>`（`--list-quarantine` 可查）。冲突路径会 skip，不覆盖。
 3. **T1 可再生缓存**：即使硬删了，下次 `pod install` / gradle / npm 构建也会重新拉，一般不用慌。
-4. **真正粉碎**：只有用户明确要求时才用 `clean.sh --purge`（跳过隔离、直接删除）。
-5. **隔离区打扫**：确认无误后可删旧时间戳目录。
+4. **真正粉碎**：只有用户明确要求（「不要了 / 粉碎 / purge」）时才用 `clean.sh --purge` 或删除 stamp 目录。**禁止**清完立刻顺手 purge。
+5. **隔离区打扫**：用户确认无误后可删旧时间戳目录；届时 `df` 才应明显上升。
 6. **Time Machine**：若用户开了时间机器，系统级恢复仍可用——本 skill 不替代备份。
+7. **误判且用户没注意**：见「隔离区与误判」——开场必须查隔离列表并提醒；脚本级冷却/通知等见「待拍板的硬增强」。
 
 ### 多 Agent 适配（不只 Cursor）
 
@@ -395,9 +442,10 @@ Local iOS/Android builds eat tens of GB. Almost all of it is reclaimable:
 4. **Measure after every step.** A cleanup that doesn't move `Avail` wasn't the real hog.
 5. **zsh glob pitfall**: `*foo*` with no match aborts the **whole command**. Use `setopt nonomatch` first, or list explicit paths.
 6. Always confirm the user wants **what** to be removed — never decide for them.
-7. Prefer **quarantine** over hard delete; only `--purge` when the user explicitly asks to permanently remove.
+7. Prefer **quarantine** over hard delete; only `--purge` when the user explicitly asks to permanently remove. Never purge in the same turn as quarantine unless the user clearly wants immediate destroy.
 8. **Ledger locks beat Agent judgment.** If the user forbids an object, call `ledger.sh lock` before any clean; `clean.sh` will exit 3 on locked paths. Never rely on chat memory alone.
 9. **Cursor shell guard** (optional but recommended): `install.sh` installs `beforeShellExecution` hook — Agent 手写 `rm`/`mv` 命中锁表会被 Cursor 拒绝。仍请优先 `clean.sh`。
+10. **Quarantine UX：** Before `--yes`, explain App-reset + space-not-freed-until-purge. After quarantine, give stamp + restore command + ask whether to try the app / restore / wait. On session start, if quarantine stamps exist, remind the user. See「隔离区与误判」.
 
 ## When to stop 验收标准
 
