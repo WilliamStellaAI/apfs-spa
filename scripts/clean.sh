@@ -21,6 +21,10 @@
 #
 set -u
 
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+STATE_SH="$ROOT/scripts/state.sh"
+LEDGER_SH="$ROOT/scripts/ledger.sh"
+
 TIER=1
 YES=0
 PURGE=0
@@ -31,6 +35,10 @@ RESTORE_STAMP=""
 # APFS_SPA_HOME overrides $HOME for selftests (never set this on real cleanups unless intentional)
 BASE="${APFS_SPA_HOME:-$HOME}"
 QUARANTINE_ROOT="${APFS_SPA_QUARANTINE:-$BASE/.cache/apfs-spa-quarantine}"
+# Governance ledger (SQLite). Required before any destructive action.
+export APFS_SPA_LEDGER="${APFS_SPA_LEDGER:-$BASE/.cache/apfs-spa/ledger.sqlite}"
+
+CLEANED_PATHS=()
 
 usage() {
   sed -n '2,18p' "$0"
@@ -81,11 +89,40 @@ ensure_quarantine() {
   fi
 }
 
+ensure_ledger() {
+  if [ ! -x "$LEDGER_SH" ] && [ ! -f "$LEDGER_SH" ]; then
+    say "FATAL: ledger.sh missing at $LEDGER_SH — refusing to clean without governance ledger."
+    exit 3
+  fi
+  # init db + system locks (idempotent)
+  python3 "$ROOT/scripts/ledger.py" --db "$APFS_SPA_LEDGER" init >/dev/null
+}
+
+# Returns 0 if unlocked; prints lock info and returns 3 if locked.
+ledger_check_path() {
+  local src="$1"
+  local mode="quarantine"
+  [ "$PURGE" = 1 ] && mode="purge"
+  [ "$YES" != 1 ] && mode="dry-run"
+  if python3 "$ROOT/scripts/ledger.py" --db "$APFS_SPA_LEDGER" assert-unlocked \
+      --path "$src" --mode "$mode" --record; then
+    return 0
+  fi
+  return 3
+}
+
 retire_path() {
   local src="$1"
+  ensure_ledger
+  if ! ledger_check_path "$src"; then
+    say "REFUSED by ledger lock (exit 3): $src"
+    say "Unlock only if you really mean it: ./scripts/ledger.sh unlock --id <id>"
+    exit 3
+  fi
   if [ "$PURGE" = 1 ]; then
     rm -rf "$src"
     say "  purged: $src"
+    CLEANED_PATHS+=("$src")
     return 0
   fi
   ensure_quarantine
@@ -99,9 +136,16 @@ retire_path() {
     rel="${dest#"$QUARANTINE_DIR"/}"
   fi
   mv "$src" "$dest"
+  if [ $? -ne 0 ] || [ -e "$src" ]; then
+    say "  FAILED to move (macOS privacy/TCC?): $src"
+    say "  Grant Full Disk Access to Cursor (or Terminal), then retry."
+    say "  系统设置 → 隐私与安全性 → 完全磁盘访问权限 → 打开 Cursor"
+    exit 4
+  fi
   # MANIFEST: original_abs_path<TAB>rel_under_quarantine
   printf '%s\t%s\n' "$src" "$rel" >> "$QUARANTINE_DIR/MANIFEST.tsv"
   say "  quarantined → $dest"
+  CLEANED_PATHS+=("$src")
 }
 
 # would_delete <label> <path> [<path>...]
@@ -122,11 +166,17 @@ would_delete() {
   say ""
   bold "  [$label]"
   size_of "${existing[@]}"
+  ensure_ledger
   if [ "$YES" = 1 ]; then
     for p in "${existing[@]}"; do
       retire_path "$p"
     done
   else
+    for p in "${existing[@]}"; do
+      if ! ledger_check_path "$p"; then
+        say "  LOCKED (would refuse on --yes): $p"
+      fi
+    done
     say "  (dry-run; add --yes to quarantine, or --yes --purge to hard-delete)"
   fi
 }
@@ -276,7 +326,39 @@ after=$(df -h / | awk 'NR==2{print $4}')
 bold "Avail AFTER: $after"
 
 echo
+mode="dry-run"
 if [ "$YES" = 1 ]; then
+  mode="quarantine"
+  [ "$PURGE" = 1 ] && mode="purge"
+fi
+
+# Always require ledger present before finishing a clean attempt
+ensure_ledger
+
+if [ "$YES" = 1 ]; then
+  if [ -x "$STATE_SH" ] || [ -f "$STATE_SH" ]; then
+    "$STATE_SH" record-clean \
+      --tier "$TIER" \
+      --mode "$mode" \
+      --stamp "${STAMP:-}" \
+      --avail-before "$before" \
+      --avail-after "$after" >/dev/null || true
+  fi
+  paths_joined=""
+  if [ ${#CLEANED_PATHS[@]} -gt 0 ]; then
+    paths_joined="$(printf '%s\n' "${CLEANED_PATHS[@]}")"
+  fi
+  python3 "$ROOT/scripts/ledger.py" --db "$APFS_SPA_LEDGER" record-action \
+    --kind clean \
+    --tier "$TIER" \
+    --mode "$mode" \
+    --stamp "${STAMP:-}" \
+    --paths "$paths_joined" \
+    --result ok \
+    --avail-before "$before" \
+    --avail-after "$after" \
+    --detail-json "{\"apps\":$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$APPS")}" \
+    >/dev/null || true
   if [ "$PURGE" = 1 ]; then
     bold "Done (purged). 用 df -h / 复核；若 Avail 未变，真正的大头在别处。"
   else
@@ -285,5 +367,14 @@ if [ "$YES" = 1 ]; then
     bold "请用 df -h / 复核收益；若 Avail 未变，真正的大头在别处，重新扫描。"
   fi
 else
+  python3 "$ROOT/scripts/ledger.py" --db "$APFS_SPA_LEDGER" record-action \
+    --kind clean \
+    --tier "$TIER" \
+    --mode dry-run \
+    --result ok \
+    --avail-before "$before" \
+    --avail-after "$after" \
+    >/dev/null || true
   bold "Dry-run only. Re-run with --yes to quarantine, or --yes --purge to hard-delete."
 fi
+bold "Ledger: $APFS_SPA_LEDGER  (locks: ./scripts/ledger.sh list-locks)"

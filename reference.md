@@ -125,21 +125,75 @@ If `Avail` did not move, the real hog is elsewhere — rescan, don't delete more
 
 ## JSON report schema（scan.sh --json）
 
+Schema **v2** adds usage trajectory + ownership deps (not full call graphs):
+
 ```json
 {
   "skill": "mac-storage-governance",
-  "schema_version": 1,
+  "schema_version": 2,
   "read_only": true,
-  "disk": { "root": {}, "data": {} },
-  "summary": { "t1_bytes": 0, "t2_bytes": 0, "t3_bytes": 0, "t4_bytes": 0 },
+  "evidence_notes": ["..."],
+  "summary": {
+    "t1_human": "…",
+    "promoted_to_t4": 0,
+    "open_now_count": 0
+  },
   "findings": [
-    { "tier": "T1", "action": "safe_to_clean", "label": "CocoaPods", "path": "...", "bytes": 0, "human": "1.1G" }
-  ],
-  "agent_hint": "..."
+    {
+      "tier": "T4",
+      "action": "forbidden",
+      "label": "WeChat sandbox",
+      "human": "13.9G",
+      "confidence": "high",
+      "usage": {
+        "open_now": true,
+        "holders": ["WeChat(pid …)"],
+        "owner_app": "/Applications/WeChat.app",
+        "owner_last_used": "…",
+        "path_times": { "mtime": "…" }
+      },
+      "deps": {
+        "kind": "app_sandbox",
+        "upstream": ["/Applications/WeChat.app"],
+        "downstream": ["app user data / cache inside sandbox"],
+        "regen": false
+      },
+      "classify_reasons": ["open_now: process holds path"]
+    }
+  ]
 }
 ```
 
-`action`: `safe_to_clean` | `ask_first` | `forbidden`.
+`action`: `safe_to_clean` | `ask_first` | `forbidden`.  
+Container heuristic: installed/recently-used owner → promote T3→T4; no owner → stay T3 orphan candidate.
+
+## Architecture Canvas GRAPH（实现备注）
+
+权威 UX 契约在 `SKILL.md`「架构图完整能力」。重建请用：
+
+```bash
+./scripts/render-architecture-canvas.sh --report /tmp/apfs-spa.json \
+  --out ~/.cursor/projects/<workspace>/canvases/mac-disk-architecture.canvas.tsx
+```
+
+脚本会：读 JSON v2 → 生成内嵌 `GRAPH` → 拼 `templates/architecture-canvas.body.tsx` → 写 Canvas；并（默认）调用 `state.sh record-scan` + `record-canvas`。
+
+```ts
+{
+  disk: { size_h, used_h, avail_h, … },
+  asOf: "YYYY-MM-DD",
+  session?: { phase, last_clean, … },  // 来自 state.json
+  nodes: [{ id, title, size, kind, advice, category, detail, path?, app?, bundle?, open_now?, last_used?, unused? }],
+  edges: [{ from, to }],
+  checklist: [{ title, size, group, category, advice, why, last_used, unused, open_now?, bundle? }]
+}
+```
+
+- `category`: `dont` | `orphan` | `ask` | `safe` | `neutral`
+- `group`：`不要动` | `疑似卸载残留` | `先确认还在用不` | `可以清`
+- 状态文件：`~/.cache/apfs-spa/state.json`（`APFS_SPA_STATE` 可覆盖）
+- **治理账本**：`~/.cache/apfs-spa/ledger.sqlite`（`APFS_SPA_LEDGER`）— `snapshots` / `actions` / `locks`；`clean.sh` 强制 `assert-unlocked`
+- **Cursor shell guard**：`scripts/cursor-hook-shell-guard.py`；`install.sh --hooks-only` 写入 `~/.cursor/hooks.json`（`beforeShellExecution` + `failClosed`）
 
 ## Multi-agent install paths
 

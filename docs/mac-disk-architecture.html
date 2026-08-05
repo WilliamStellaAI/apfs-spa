@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mac 磁盘架构图 · apfs-spa</title>
+<style>
+  :root {
+    --bg: #f6f4ef;
+    --ink: #1c1917;
+    --muted: #78716c;
+    --card: #fffdf8;
+    --line: #e7e0d5;
+    --accent: #0f766e;
+    --t1: #15803d;
+    --t2: #1d4ed8;
+    --t3: #b45309;
+    --t4: #b91c1c;
+    --ok: #166534;
+    --warn: #a16207;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 15px/1.5 "PingFang SC", "Noto Sans SC", "Segoe UI", sans-serif;
+    color: var(--ink);
+    background:
+      radial-gradient(1200px 600px at 10% -10%, #e8f5f2 0%, transparent 55%),
+      radial-gradient(900px 500px at 100% 0%, #f3ebe0 0%, transparent 50%),
+      var(--bg);
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 20px 64px; }
+  h1 { font-size: 28px; margin: 0 0 8px; letter-spacing: -0.02em; }
+  h2 { font-size: 18px; margin: 28px 0 8px; }
+  h3 { font-size: 15px; margin: 0 0 8px; }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+  .toolbar { display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-bottom: 16px; }
+  .lang { display:flex; gap:6px; align-items:center; }
+  button.lang-btn {
+    border: 1px solid var(--line);
+    background: var(--card);
+    color: var(--ink);
+    border-radius: 8px;
+    padding: 6px 12px;
+    cursor: pointer;
+  }
+  button.lang-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .callout {
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin: 14px 0 18px;
+  }
+  .stats { display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; margin: 16px 0; }
+  @media (max-width: 800px) { .stats { grid-template-columns: 1fr 1fr; } }
+  .stat {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px;
+  }
+  .stat .v { font-size: 22px; font-weight: 650; }
+  .stat .l { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    margin: 14px 0;
+    overflow: hidden;
+  }
+  .card-h {
+    display:flex; justify-content:space-between; align-items:center;
+    padding: 12px 14px; border-bottom: 1px solid var(--line); font-weight: 600;
+  }
+  .bar {
+    display:flex; height: 18px; border-radius: 999px; overflow:hidden; background:#e7e5e4; margin-top: 8px;
+  }
+  .bar > span { display:block; height:100%; }
+  .bar .avail { background:#16a34a; }
+  .bar .findings { background:#ea580c; }
+  .bar .rest { background:#2563eb; }
+  table { width:100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 9px 10px; border-top: 1px solid var(--line); vertical-align: top; text-align:left; }
+  th { color: var(--muted); font-weight: 600; background: #faf7f2; position: sticky; top: 0; }
+  td.num { text-align:right; font-variant-numeric: tabular-nums; white-space:nowrap; }
+  .id .main { font-weight: 600; }
+  .id .sub { color: var(--muted); font-size: 12px; }
+  .pill {
+    display:inline-block; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid var(--line); background: #f5f5f4; font-size: 12px; white-space:nowrap;
+  }
+  .tone-t4 { border-color:#fecaca; background:#fef2f2; color: var(--t4); }
+  .tone-t3 { border-color:#fde68a; background:#fffbeb; color: var(--t3); }
+  .tone-t2 { border-color:#bfdbfe; background:#eff6ff; color: var(--t2); }
+  .tone-t1 { border-color:#bbf7d0; background:#f0fdf4; color: var(--t1); }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+  .dot.t4 { background: var(--t4); } .dot.t3 { background: var(--t3); }
+  .dot.t2 { background: var(--t2); } .dot.t1 { background: var(--t1); }
+  .legend { display:flex; flex-wrap:wrap; gap:8px; margin: 10px 0 14px; }
+  .pad { padding: 12px 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="toolbar">
+    <div class="small muted" id="source"></div>
+    <div class="lang">
+      <span class="small muted" data-i="lang"></span>
+      <button class="lang-btn" id="btn-zh" type="button" onclick="setLang('zh')">中文</button>
+      <button class="lang-btn" id="btn-en" type="button" onclick="setLang('en')">EN</button>
+    </div>
+  </div>
+
+  <h1 id="title"></h1>
+  <p class="muted" id="subtitle"></p>
+
+  <div class="callout">
+    <strong id="howto_title"></strong>
+    <div class="small" id="howto" style="margin-top:4px"></div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="v" id="v-pool"></div><div class="l" data-i="stat_pool"></div></div>
+    <div class="stat"><div class="v" id="v-used"></div><div class="l" data-i="stat_used"></div></div>
+    <div class="stat"><div class="v" id="v-avail"></div><div class="l" data-i="stat_avail"></div></div>
+    <div class="stat"><div class="v" id="v-home"></div><div class="l" data-i="stat_home"></div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-h" data-i="cap_title"></div>
+    <div class="pad">
+      <div class="small muted" id="cap-meta"></div>
+      <div class="bar" id="cap-bar"></div>
+      <div class="small muted" style="margin-top:8px" id="cap-legend"></div>
+      <div class="small muted" id="cap-share"></div>
+    </div>
+  </div>
+
+  <h2 data-i="hier_title"></h2>
+  <p class="small muted" id="hier_path"></p>
+  <div id="tables"></div>
+
+  <h2 data-i="cat_title"></h2>
+  <p class="small muted" data-i="cat_desc"></p>
+  <h3 data-i="legend"></h3>
+  <div class="legend" id="legend"></div>
+
+  <div class="card">
+    <div class="card-h" data-i="findings_title"></div>
+    <div id="findings"></div>
+  </div>
+
+  <p class="small muted" style="margin-top:20px" data-i="footer"></p>
+</div>
+
+<script>
+const DATA = {"disk": {"volume": "/System/Volumes/Data", "size": 245107195904, "used": 128012566528, "avail": 82375802880, "size_h": "228.3G", "used_h": "119.2G", "avail_h": "76.7G", "capacity": "61%", "findings_total_h": "25.7G"}, "home_h": "59.1G", "library_h": "50.3G", "lib": [{"name": "Containers", "human": "22.0G", "bytes": 23622320128, "tier": "info", "action": "info", "role": "sandbox_root", "identity": "App Sandboxes", "confidence": "high", "open_now": false, "owner": null, "up": null, "down": null, "regen": null, "why": null}, {"name": "Application Support", "human": "20.0G", "bytes": 21474836480, "tier": "T2", "action": "ask_first", "role": "app_data_root", "identity": "Application Support", "confidence": "low", "open_now": false, "owner": null, "up": null, "down": null, "regen": null, "why": null}, {"name": "Android", "human": "4.6G", "bytes": 4913410048, "tier": "T2", "action": "ask_first", "role": "sdk", "identity": "Android SDK area", "confidence": "medium", "open_now": false, "owner": null, "up": null, "down": null, "regen": null, "why": null}, {"name": "Caches", "human": "1018.6M", "bytes": 1068101632, "tier": "T1", "action": "ask_first", "role": "cache_root", "identity": "Caches", "confidence": "medium", "open_now": false, "owner": null, "up": null, "down": null, "regen": true, "why": null}, {"name": "Python", "human": "832.5M", "bytes": 872960000, "tier": "unknown", "action": "ask_first", "role": "unknown", "identity": "Python", "confidence": "low", "open_now": false, "owner": null, "up": null, "down": null, "regen": null, "why": null}, {"name": "Developer", "human": "685.4M", "bytes": 718737408, "tier": "T2", "action": "ask_first", "role": "dev_tools", "identity": "Xcode/Developer", "confidence": "medium", "open_now": false, "owner": null, "up": null, "down": null, "regen": null, "why": null}, {"name": "Preferences", "human": "446.0M", "bytes": 467705856, "tier": "unknown", "action": "ask_first", "role": "unknown", "identity": "Preferences", "confidence": "low", "open_now": false, "owner": null, "up": null, "down": null, "regen": null, "why": null}, {"name": "Fonts", "human": "375.3M", "bytes": 393568256, "tier": "unknown", "action": "ask_first", "role": "unknown", "identity": "Fonts", "confidence": "low", "open_now": false, "owner": null, "up": null, "down": null, "regen": null, "why": null}], "as": [{"name": "Cursor", "human": "8.1G", "bytes": 8708575232, "tier": "T2", "action": "ask_first", "role": "ide_data", "identity": "Cursor IDE data", "confidence": "medium", "open_now": false, "owner": null, "up": null, "down": null, "regen": null, "why": null}, {"name": "Trae CN", "human": "2.8G", "bytes": 3016900608, "tier": "T2", "action": "ask_first", "role": "ide_data", "identity": "Trae IDE data", "confidence": "medium", "open_now": false, "owner": null, "up": null, "down": null, "regen": null, "why": null}, {"name": "Telegram Desktop", "human": "2.2G", "bytes": 2309840896, "tier": "T4", "action": "ask_first", "role": "app_data", "identity": "Telegram data", "confidence": "medium", "open_now": false, "owner": null, "up": null, "down": null, "regen": null, "why": null}, {"name": "Google", "human": "1.4G", "bytes": 1487257600, "tier": "T2", "action": "ask_first", "role": "app_data", "identity": "Google app data", "confidence": "low", "open_now": false, "owner": null, "up": null, "down": null, "regen": null, "why": null}, {"name": "Adobe", "human": "1.1G", "bytes": 1166823424, "tier": "unknown", "action": "ask_first", "role": "unknown", "identity": "Adobe", "confidence": "low", "open_now": false, "owner": null, "up": null, "down": null, "regen": null, "why": null}, {"name": "com.apple.mobileAssetDesktop", "human": "925.4M", "bytes": 970342400, "tier": "T3", "action": "ask_first", "role": "app_sandbox", "identity": "Container com.apple.mobileAssetDesktop", "confidence": "low", "open_now": false, "owner": null, "up": null, "down": null, "regen": null, "why": "container without v2 enrichment in this tree pass"}, {"name": "Doubao", "human": "896.6M", "bytes": 940126208, "tier": "unknown", "action": "ask_first", "role": "unknown", "identity": "Doubao", "confidence": "low", "open_now": false, "owner": null, "up": null, "down": null, "regen": null, "why": null}], "ct": [{"name": "com.tencent.xinWeChat", "human": "13.9G", "bytes": 14956253184, "tier": "T4", "action": "forbidden", "role": "app_sandbox", "identity": "WeChat sandbox", "confidence": "high", "open_now": true, "owner": "WeChat.app", "up": "/Applications/WeChat.app", "down": "app user data / cache inside sandbox", "regen": false, "why": "open_now: process holds path"}, {"name": "com.kingsoft.wpsoffice.mac", "human": "2.3G", "bytes": 2492489728, "tier": "T3", "action": "ask_first", "role": "app_sandbox", "identity": "Container com.kingsoft.wpsoffice.mac", "confidence": "medium", "open_now": false, "owner": null, "up": "com.kingsoft.wpsoffice.mac", "down": "app user data / cache inside sandbox", "regen": false, "why": "no owner_app found — possible leftover sandbox"}, {"name": "5ZSL2CJU2T.com.dingtalk.mac.tblive", "human": "859.7M", "bytes": 901500928, "tier": "T3", "action": "ask_first", "role": "app_sandbox", "identity": "Container 5ZSL2CJU2T.com.dingtalk.mac.tblive", "confidence": "medium", "open_now": false, "owner": null, "up": "5ZSL2CJU2T.com.dingtalk.mac.tblive", "down": "app user data / cache inside sandbox", "regen": false, "why": "no owner_app found — possible leftover sandbox"}, {"name": "5ZSL2CJU2T.com.dingtalk.mac", "human": "816.6M", "bytes": 856268800, "tier": "T3", "action": "ask_first", "role": "app_sandbox", "identity": "Container 5ZSL2CJU2T.com.dingtalk.mac", "confidence": "medium", "open_now": false, "owner": null, "up": "5ZSL2CJU2T.com.dingtalk.mac", "down": "app user data / cache inside sandbox", "regen": false, "why": "no owner_app found — possible leftover sandbox"}, {"name": "com.tencent.meeting", "human": "727.0M", "bytes": 762286080, "tier": "T3", "action": "ask_first", "role": "app_sandbox", "identity": "Container com.tencent.meeting", "confidence": "medium", "open_now": false, "owner": null, "up": "com.tencent.meeting", "down": "app user data / cache inside sandbox", "regen": false, "why": "no owner_app found — possible leftover sandbox"}, {"name": "com.tencent.qq", "human": "615.3M", "bytes": 645156864, "tier": "T3", "action": "ask_first", "role": "app_sandbox", "identity": "Container com.tencent.qq", "confidence": "medium", "open_now": false, "owner": null, "up": "com.tencent.qq", "down": "app user data / cache inside sandbox", "regen": false, "why": "no owner_app found — possible leftover sandbox"}, {"name": "com.apple.geod", "human": "458.0M", "bytes": 480272384, "tier": "T3", "action": "ask_first", "role": "app_sandbox", "identity": "Container com.apple.geod", "confidence": "medium", "open_now": false, "owner": null, "up": "com.apple.geod", "down": "app user data / cache inside sandbox", "regen": false, "why": "no owner_app found — possible leftover sandbox"}], "home_extra": [{"name": "Documents", "human": "2.0G", "bytes": 2144784384, "tier": "T4", "action": "forbidden", "role": "user_content", "identity": "Documents", "confidence": "high", "open_now": false, "owner": null, "up": null, "down": null, "regen": null, "why": null}, {"name": ".workbuddy", "human": "1.3G", "bytes": 1399779328, "tier": "T2", "action": "ask_first", "role": "dot_tool_data", "identity": ".workbuddy", "confidence": "low", "open_now": false, "owner": null, "up": null, "down": null, "regen": null, "why": null}, {"name": ".cache", "human": "1.3G", "bytes": 1399115776, "tier": "T2", "action": "ask_first", "role": "dot_tool_data", "identity": ".cache", "confidence": "low", "open_now": false, "owner": null, "up": null, "down": null, "regen": null, "why": null}, {"name": "src", "human": "812.6M", "bytes": 852123648, "tier": "unknown", "action": "ask_first", "role": "unknown", "identity": "src", "confidence": "low", "open_now": false, "owner": null, "up": null, "down": null, "regen": null, "why": null}, {"name": "budbuddy-tarball-legacy", "human": "787.7M", "bytes": 826011648, "tier": "unknown", "action": "ask_first", "role": "unknown", "identity": "budbuddy-tarball-legacy", "confidence": "low", "open_now": false, "owner": null, "up": null, "down": null, "regen": null, "why": null}, {"name": ".antigravity-ide", "human": "656.8M", "bytes": 688717824, "tier": "T2", "action": "ask_first", "role": "dot_tool_data", "identity": ".antigravity-ide", "confidence": "low", "open_now": false, "owner": null, "up": null, "down": null, "regen": null, "why": null}, {"name": ".android", "human": "515.2M", "bytes": 540262400, "tier": "T2", "action": "ask_first", "role": "dot_tool_data", "identity": ".android", "confidence": "low", "open_now": false, "owner": null, "up": null, "down": null, "regen": null, "why": null}, {"name": ".npm", "human": "495.9M", "bytes": 519999488, "tier": "T2", "action": "ask_first", "role": "dot_tool_data", "identity": ".npm", "confidence": "low", "open_now": false, "owner": null, "up": null, "down": null, "regen": null, "why": null}], "findings": [{"label": "WeChat sandbox", "human": "13.9G", "tier": "T4", "action": "forbidden", "confidence": "high", "open_now": true, "owner": "WeChat.app", "role": "app_sandbox", "why": "open_now: process holds path", "up": "/Applications/WeChat.app"}, {"label": "Android SDK", "human": "4.6G", "tier": "T2", "action": "ask_first", "confidence": "medium", "open_now": false, "owner": "—", "role": "sdk", "why": "large toolchain/emulator — confirm unused", "up": "Android Studio / cmdline-tools"}, {"label": "Container com.kingsoft.wpsoffice.mac", "human": "2.3G", "tier": "T3", "action": "ask_first", "confidence": "medium", "open_now": false, "owner": "—", "role": "app_sandbox", "why": "no owner_app found — possible leftover sandbox", "up": "com.kingsoft.wpsoffice.mac"}, {"label": "Container 5ZSL2CJU2T.com.dingtalk.mac.tblive", "human": "859.7M", "tier": "T3", "action": "ask_first", "confidence": "medium", "open_now": false, "owner": "—", "role": "app_sandbox", "why": "no owner_app found — possible leftover sandbox", "up": "5ZSL2CJU2T.com.dingtalk.mac.tblive"}, {"label": "Container 5ZSL2CJU2T.com.dingtalk.mac", "human": "816.6M", "tier": "T3", "action": "ask_first", "confidence": "medium", "open_now": false, "owner": "—", "role": "app_sandbox", "why": "no owner_app found — possible leftover sandbox", "up": "5ZSL2CJU2T.com.dingtalk.mac"}, {"label": "Container com.tencent.meeting", "human": "727.0M", "tier": "T3", "action": "ask_first", "confidence": "medium", "open_now": false, "owner": "—", "role": "app_sandbox", "why": "no owner_app found — possible leftover sandbox", "up": "com.tencent.meeting"}, {"label": "Container com.tencent.qq", "human": "615.3M", "tier": "T3", "action": "ask_first", "confidence": "medium", "open_now": false, "owner": "—", "role": "app_sandbox", "why": "no owner_app found — possible leftover sandbox", "up": "com.tencent.qq"}, {"label": "Container com.apple.geod", "human": "458.0M", "tier": "T3", "action": "ask_first", "confidence": "medium", "open_now": false, "owner": "—", "role": "app_sandbox", "why": "no owner_app found — possible leftover sandbox", "up": "com.apple.geod"}, {"label": "Container com.microsoft.teams2", "human": "348.2M", "tier": "T3", "action": "ask_first", "confidence": "medium", "open_now": false, "owner": "—", "role": "app_sandbox", "why": "no owner_app found — possible leftover sandbox", "up": "com.microsoft.teams2"}, {"label": "Container com.taobao.Aliwangwang", "human": "281.5M", "tier": "T3", "action": "ask_first", "confidence": "medium", "open_now": false, "owner": "—", "role": "app_sandbox", "why": "no owner_app found — possible leftover sandbox", "up": "com.taobao.Aliwangwang"}, {"label": "Container com.apple.mediaanalysisd", "human": "278.3M", "tier": "T3", "action": "ask_first", "confidence": "medium", "open_now": false, "owner": "—", "role": "app_sandbox", "why": "no owner_app found — possible leftover sandbox", "up": "com.apple.mediaanalysisd"}, {"label": "Container com.tencent.QQMusicMac", "human": "219.0M", "tier": "T3", "action": "ask_first", "confidence": "medium", "open_now": false, "owner": "—", "role": "app_sandbox", "why": "no owner_app found — possible leftover sandbox", "up": "com.tencent.QQMusicMac"}]};
+const I18N = {"zh": {"title": "Mac 磁盘架构图", "subtitle": "本机实时快照：按层级展示大小，并对可识别节点标注身份、作用、档位、动作、置信度与依赖/证据。未知节点保持低置信度——这不是完整文件系统本体。", "source": "数据来源：apfs-spa 扫描 + 限深 du · Data 卷", "howto_title": "怎么读", "howto": "档位是清理风险梯子（T1 最安全 → T4 禁止）。动作是 Agent 策略：可安全清理 / 先确认 / 禁止。当直接 du 被 TCC/超时挡住时，Home/Library 父级大小用子树聚合估算。", "stat_pool": "APFS 池容量", "stat_used": "Data 已用", "stat_avail": "可用空间", "stat_home": "家目录（映射）", "cap_title": "共享 APFS 池容量构成", "cap_full": "已满（Data 界面）", "cap_used": "已用", "cap_free": "空闲", "cap_pool": "池", "cap_legend": "绿=可用 · 橙=目录表命中 · 蓝=其余已用", "cap_share": "命中项占池比例", "lib_mapped": "Library 映射", "hier_title": "层级（已下钻）", "hier_path": "Data（已用 {used}）→ ~（{home}）→ Library（{lib}）→ 热点子树", "t_lib": "~/Library（顶层）", "t_ct": "Library/Containers（沙盒顶层）", "t_as": "Library/Application Support（顶层）", "t_home": "~ 其他大户（非 Library）", "nodes": "个节点", "col_size": "大小", "col_id": "身份 / 路径", "col_role": "作用", "col_tier": "档位", "col_action": "动作", "col_conf": "置信", "col_deps": "依赖 / 证据", "cat_title": "目录表 findings（语义层）", "cat_desc": "来自 scan.sh --json schema v2——用于档位提升的最强证据（正在使用 / 属主 App）。", "legend": "图例", "leg_t1": "T1 可再生", "leg_t2": "T2 确认不用再清工具链", "leg_t3": "T3 疑似卸载残留沙盒", "leg_t4": "T4 禁止 / 正在使用", "leg_unk": "unknown / 信息节点", "findings_title": "富化 findings", "col_evidence": "证据", "lang": "语言", "open_now": "正在使用", "owner": "属主", "regen_yes": "可再生:是", "regen_no": "可再生:否", "conf_high": "高", "conf_medium": "中", "conf_low": "低", "footer": "完整 JSON：/tmp/apfs-spa-arch-tree.json · findings：/tmp/apfs-spa-report-v2.json"}, "en": {"title": "Mac disk architecture map", "subtitle": "Live snapshot: hierarchical sizes with identity, role, tier, action, confidence, and deps/evidence where rules match. Unknown nodes stay low-confidence — not a full FS ontology.", "source": "Source: apfs-spa scan + depth-limited du · Data volume", "howto_title": "How to read this", "howto": "Tier is a cleanup risk ladder (T1 safest → T4 forbidden). Action is agent policy: safe_to_clean / ask_first / forbidden. Parent Home/Library sizes use child aggregation when direct du is blocked by TCC/timeouts.", "stat_pool": "APFS pool size", "stat_used": "Data used", "stat_avail": "Available", "stat_home": "Home (mapped)", "cap_title": "Capacity mix on the shared APFS pool", "cap_full": "full (Data UI)", "cap_used": "used", "cap_free": "free", "cap_pool": "pool", "cap_legend": "Green=available · Orange=catalog findings · Blue=other used", "cap_share": "Findings share of pool", "lib_mapped": "Library mapped", "hier_title": "Hierarchy (drilled)", "hier_path": "Data ({used} used) → ~ ({home}) → Library ({lib}) → hot subtrees", "t_lib": "~/Library (top)", "t_ct": "Library/Containers (top sandboxes)", "t_as": "Library/Application Support (top)", "t_home": "~ other heavy paths (non-Library)", "nodes": "nodes", "col_size": "Size", "col_id": "Identity / path", "col_role": "Role", "col_tier": "Tier", "col_action": "Action", "col_conf": "Conf", "col_deps": "Deps / evidence", "cat_title": "Catalog findings (semantic layer)", "cat_desc": "From scan.sh --json schema v2 — strongest evidence for tier promotion (open_now / owner_app).", "legend": "Legend", "leg_t1": "T1 regenerable", "leg_t2": "T2 confirm unused tools", "leg_t3": "T3 orphan sandbox candidate", "leg_t4": "T4 forbidden / in-use", "leg_unk": "unknown / info", "findings_title": "Enriched findings", "col_evidence": "Evidence", "lang": "Language", "open_now": "open_now", "owner": "owner", "regen_yes": "regen:yes", "regen_no": "regen:no", "conf_high": "high", "conf_medium": "medium", "conf_low": "low", "footer": "Full JSON: /tmp/apfs-spa-arch-tree.json · findings: /tmp/apfs-spa-report-v2.json"}};
+const ROLE_ZH = {"sandbox_root": "沙盒根目录", "app_data_root": "应用数据根目录", "sdk": "SDK / 工具链", "cache_root": "缓存根目录", "unknown": "未知", "dev_tools": "开发工具", "ide_data": "IDE 数据", "app_data": "应用数据", "app_sandbox": "应用沙盒", "dot_tool_data": "隐藏工具数据", "user_content": "用户内容", "emulator": "模拟器", "user_home": "用户主目录", "library_root": "用户 Library"};
+const ACTION_ZH = {"safe_to_clean": "可安全清理", "ask_first": "先确认", "forbidden": "禁止", "info": "信息"};
+const ID_ZH = {"App Sandboxes": "应用沙盒", "Application Support": "Application Support", "Android SDK area": "Android SDK 区域", "Caches": "缓存", "Xcode/Developer": "Xcode/Developer", "Cursor IDE data": "Cursor IDE 数据", "Trae IDE data": "Trae IDE 数据", "Telegram data": "Telegram 数据", "Google app data": "Google 应用数据", "WeChat sandbox": "微信沙盒", "Documents": "文稿", "Android SDK": "Android SDK"};
+const WHY_ZH = {"open_now: process holds path": "正在使用：有进程占用该路径", "no owner_app found — possible leftover sandbox": "未找到属主 App — 可能是卸载残留沙盒", "large toolchain/emulator — confirm unused": "大型工具链/模拟器 — 请确认已不用", "container without v2 enrichment in this tree pass": "本轮树扫描未做 v2 富化的容器", "catalog regenerable cache": "目录表可再生缓存", "catalog red-line path": "目录表红线路径", "owner_app installed and has use evidence": "属主 App 仍安装且有使用证据"};
+const CONF_ZH = { high: "高", medium: "中", low: "低" };
+
+function detectLang() {
+  const q = new URLSearchParams(location.search).get("lang");
+  if (q === "zh" || q === "en") return q;
+  const nav = (navigator.language || "en").toLowerCase();
+  return nav.startsWith("zh") ? "zh" : "en";
+}
+
+function t(key) { return (I18N[lang] && I18N[lang][key]) || key; }
+
+function Lrole(r) { return lang === "zh" ? (ROLE_ZH[r] || r || "—") : (r || "—"); }
+function Laction(a) { return lang === "zh" ? (ACTION_ZH[a] || a || "—") : (a || "—"); }
+function Lid(s) {
+  if (!s) return "—";
+  if (lang !== "zh") return s;
+  if (ID_ZH[s]) return ID_ZH[s];
+  if (s.startsWith("Container ")) return "容器 " + s.slice(10);
+  return s;
+}
+function Lwhy(s) { return lang === "zh" ? (WHY_ZH[s] || s || "") : (s || ""); }
+function Lconf(c) { return lang === "zh" ? (CONF_ZH[c] || c || "") : (c || ""); }
+function Ldown(d) {
+  if (!d) return null;
+  if (lang === "zh" && d === "app user data / cache inside sandbox") return "沙盒内用户数据/缓存";
+  return d;
+}
+function Lup(u) {
+  if (!u) return null;
+  if (lang === "zh" && u === "Android Studio / cmdline-tools") return "Android Studio / 命令行工具";
+  return String(u).replace(/^\/Applications\//, "");
+}
+
+function pillTier(tier) {
+  const cls = tier === "T4" ? "tone-t4" : tier === "T3" ? "tone-t3" : tier === "T2" ? "tone-t2" : tier === "T1" ? "tone-t1" : "";
+  return `<span class="pill ${cls}">${tier}</span>`;
+}
+function pillAction(a) {
+  const cls = a === "forbidden" ? "tone-t4" : a === "ask_first" ? "tone-t3" : a === "safe_to_clean" ? "tone-t1" : "";
+  return `<span class="pill ${cls}">${Laction(a)}</span>`;
+}
+
+function depsHtml(n) {
+  const bits = [];
+  if (n.open_now) bits.push(t("open_now"));
+  if (n.owner && n.owner !== "—") bits.push(`${t("owner")}:${String(n.owner).replace(/^\/Applications\//,"")}`);
+  const up = Lup(n.up); if (up) bits.push("↑ " + up);
+  const down = Ldown(n.down); if (down) bits.push("↓ " + down);
+  if (n.regen === true) bits.push(t("regen_yes"));
+  if (n.regen === false) bits.push(t("regen_no"));
+  const why = Lwhy(n.why); if (why) bits.push(why);
+  return bits.join(" · ") || "—";
+}
+
+function tableSection(titleKey, rows) {
+  const body = rows.map(n => {
+    const tone = n.tier === "T4" || n.action === "forbidden" ? "t4" : n.tier === "T3" ? "t3" : n.tier === "T2" ? "t2" : n.tier === "T1" ? "t1" : "";
+    return `<tr>
+      <td class="num">${n.human}</td>
+      <td class="id"><span class="dot ${tone}"></span><div class="main">${escapeHtml(Lid(n.identity || n.label || n.name))}</div><div class="sub">${escapeHtml(n.name || "")}</div></td>
+      <td>${escapeHtml(Lrole(n.role))}</td>
+      <td>${pillTier(n.tier)}</td>
+      <td>${pillAction(n.action)}</td>
+      <td>${escapeHtml(Lconf(n.confidence))}</td>
+      <td class="muted small">${escapeHtml(depsHtml(n))}</td>
+    </tr>`;
+  }).join("");
+  return `<div class="card">
+    <div class="card-h"><span>${t(titleKey)}</span><span class="small muted">${rows.length} ${t("nodes")}</span></div>
+    <div style="overflow:auto">
+      <table>
+        <thead><tr>
+          <th style="text-align:right">${t("col_size")}</th>
+          <th>${t("col_id")}</th>
+          <th>${t("col_role")}</th>
+          <th>${t("col_tier")}</th>
+          <th>${t("col_action")}</th>
+          <th>${t("col_conf")}</th>
+          <th>${t("col_deps")}</th>
+        </tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+}
+
+let lang = detectLang();
+
+function render() {
+  document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+  document.getElementById("btn-zh").classList.toggle("active", lang === "zh");
+  document.getElementById("btn-en").classList.toggle("active", lang === "en");
+  document.querySelectorAll("[data-i]").forEach(el => { el.textContent = t(el.getAttribute("data-i")); });
+  document.getElementById("title").textContent = t("title");
+  document.getElementById("subtitle").textContent = t("subtitle");
+  document.getElementById("howto_title").textContent = t("howto_title");
+  document.getElementById("howto").textContent = t("howto");
+  document.getElementById("source").textContent = t("source") + " " + DATA.disk.volume;
+
+  document.getElementById("v-pool").textContent = DATA.disk.size_h;
+  document.getElementById("v-used").textContent = DATA.disk.used_h;
+  document.getElementById("v-avail").textContent = DATA.disk.avail_h;
+  document.getElementById("v-home").textContent = DATA.home_h;
+
+  const size = DATA.disk.size, used = DATA.disk.used, avail = DATA.disk.avail;
+  const findings = 25.7 * 1024 ** 3;
+  const rest = Math.max(0, used - findings);
+  const pct = v => Math.max(0.5, (v / size) * 100);
+  document.getElementById("cap-bar").innerHTML =
+    `<span class="avail" style="width:${pct(avail)}%"></span>` +
+    `<span class="findings" style="width:${pct(findings)}%"></span>` +
+    `<span class="rest" style="width:${pct(rest)}%"></span>`;
+  document.getElementById("cap-meta").textContent =
+    `${DATA.disk.capacity} ${t("cap_full")} · ${DATA.disk.used_h} ${t("cap_used")} · ${DATA.disk.avail_h} ${t("cap_free")} · ${t("cap_pool")} ${DATA.disk.size_h}`;
+  document.getElementById("cap-legend").textContent =
+    `${t("cap_legend")} (${DATA.disk.findings_total_h})`;
+  document.getElementById("cap-share").textContent =
+    `${t("cap_share")} ${((findings/size)*100).toFixed(1)}% · ${t("lib_mapped")} ${DATA.library_h}`;
+
+  document.getElementById("hier_path").textContent = t("hier_path")
+    .replace("{used}", DATA.disk.used_h).replace("{home}", DATA.home_h).replace("{lib}", DATA.library_h);
+
+  document.getElementById("tables").innerHTML =
+    tableSection("t_lib", DATA.lib) +
+    tableSection("t_ct", DATA.ct) +
+    tableSection("t_as", DATA.as) +
+    tableSection("t_home", DATA.home_extra);
+
+  document.getElementById("legend").innerHTML = [
+    ["T1", t("leg_t1"), "tone-t1"],
+    ["T2", t("leg_t2"), "tone-t2"],
+    ["T3", t("leg_t3"), "tone-t3"],
+    ["T4", t("leg_t4"), "tone-t4"],
+    ["?", t("leg_unk"), ""],
+  ].map(([k, label, cls]) => `<span class="pill ${cls}">${label}</span>`).join("");
+
+  const fbody = DATA.findings.map(f => {
+    const tone = f.tier === "T4" ? "t4" : f.tier === "T3" ? "t3" : f.tier === "T2" ? "t2" : "";
+    const ev = depsHtml(f);
+    return `<tr>
+      <td class="num">${f.human}</td>
+      <td><span class="dot ${tone}"></span>${escapeHtml(Lid(f.label))}</td>
+      <td>${pillTier(f.tier)}</td>
+      <td>${pillAction(f.action)}</td>
+      <td>${escapeHtml(Lrole(f.role))}</td>
+      <td class="muted small">${escapeHtml(ev)}</td>
+    </tr>`;
+  }).join("");
+  document.getElementById("findings").innerHTML = `<div style="overflow:auto"><table>
+    <thead><tr>
+      <th style="text-align:right">${t("col_size")}</th>
+      <th>${t("col_id")}</th>
+      <th>${t("col_tier")}</th>
+      <th>${t("col_action")}</th>
+      <th>${t("col_role")}</th>
+      <th>${t("col_evidence")}</th>
+    </tr></thead><tbody>${fbody}</tbody></table></div>`;
+
+  document.title = t("title") + " · apfs-spa";
+  const url = new URL(location.href);
+  url.searchParams.set("lang", lang);
+  history.replaceState(null, "", url);
+}
+
+function setLang(l) { lang = l; render(); }
+render();
+</script>
+</body>
+</html>

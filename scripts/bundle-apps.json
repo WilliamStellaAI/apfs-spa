@@ -1,0 +1,71 @@
+{
+  "com.tencent.xinWeChat": {
+    "app": "微信",
+    "app_en": "WeChat",
+    "vendor": "腾讯",
+    "note": "聊天记录与媒体主要存在此沙盒中"
+  },
+  "com.tencent.WeWorkMac": {
+    "app": "企业微信",
+    "app_en": "WeCom",
+    "vendor": "腾讯"
+  },
+  "com.kingsoft.wpsoffice.mac": {
+    "app": "WPS Office",
+    "app_en": "WPS Office",
+    "vendor": "金山"
+  },
+  "5ZSL2CJU2T.com.dingtalk.mac": {
+    "app": "钉钉",
+    "app_en": "DingTalk",
+    "vendor": "阿里巴巴"
+  },
+  "5ZSL2CJU2T.com.dingtalk.mac.tblive": {
+    "app": "钉钉（直播相关组件）",
+    "app_en": "DingTalk Live",
+    "vendor": "阿里巴巴"
+  },
+  "com.tencent.meeting": {
+    "app": "腾讯会议",
+    "app_en": "Tencent Meeting",
+    "vendor": "腾讯"
+  },
+  "com.tencent.qq": {
+    "app": "QQ",
+    "app_en": "QQ",
+    "vendor": "腾讯"
+  },
+  "com.tencent.QQMusicMac": {
+    "app": "QQ 音乐",
+    "app_en": "QQ Music",
+    "vendor": "腾讯"
+  },
+  "com.microsoft.teams2": {
+    "app": "Microsoft Teams",
+    "app_en": "Microsoft Teams",
+    "vendor": "微软"
+  },
+  "com.taobao.Aliwangwang": {
+    "app": "阿里旺旺",
+    "app_en": "Aliwangwang",
+    "vendor": "淘宝/阿里巴巴",
+    "note": "淘宝买卖家沟通工具"
+  },
+  "com.apple.geod": {
+    "app": "系统定位服务（地图相关后台）",
+    "app_en": "Apple Location / Maps (geod)",
+    "vendor": "Apple",
+    "note": "系统组件，一般不要当普通 App 残留乱删"
+  },
+  "com.apple.mediaanalysisd": {
+    "app": "系统照片分析服务",
+    "app_en": "Photos media analysis",
+    "vendor": "Apple",
+    "note": "系统组件，用于相册识别等"
+  },
+  "com.apple.mobileAssetDesktop": {
+    "app": "系统桌面资源（动态壁纸等）",
+    "app_en": "Desktop mobile assets",
+    "vendor": "Apple"
+  }
+}
