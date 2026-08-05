@@ -42,12 +42,44 @@ mkdir -p \
   "$APFS_SPA_HOME/Library/Caches/CocoaPods" \
   "$APFS_SPA_HOME/.gradle/caches" \
   "$APFS_SPA_HOME/Library/Containers/com.tencent.xinWeChat" \
+  "$APFS_SPA_HOME/Library/Containers/5ZSL2CJU2T.com.dingtalk.mac/Data" \
+  "$APFS_SPA_HOME/Applications/DingTalk.app/Contents" \
   "$APFS_SPA_HOME/Documents"
 
 echo "pods-cache" > "$APFS_SPA_HOME/Library/Caches/CocoaPods/x.txt"
 echo "gradle" > "$APFS_SPA_HOME/.gradle/caches/y.bin"
 echo "wechat" > "$APFS_SPA_HOME/Library/Containers/com.tencent.xinWeChat/msg.db"
+echo "dingtalk-data" > "$APFS_SPA_HOME/Library/Containers/5ZSL2CJU2T.com.dingtalk.mac/Data/chat.db"
 echo "doc" > "$APFS_SPA_HOME/Documents/keep-me.txt"
+
+# DingTalk-style mismatch: container folder ≠ CFBundleIdentifier; metadata points at .app
+DT_APP="$APFS_SPA_HOME/Applications/DingTalk.app"
+DT_CONT="$APFS_SPA_HOME/Library/Containers/5ZSL2CJU2T.com.dingtalk.mac"
+python3 - "$DT_APP" "$DT_CONT" <<'PY'
+import plistlib, sys
+from pathlib import Path
+app, cont = Path(sys.argv[1]), Path(sys.argv[2])
+info = app / "Contents" / "Info.plist"
+with open(info, "wb") as f:
+    plistlib.dump({
+        "CFBundleIdentifier": "com.alibaba.DingTalkMac",
+        "CFBundleExecutable": "DingTalk",
+        "CFBundleName": "DingTalk",
+    }, f)
+meta = {
+    "MCMMetadataIdentifier": "5ZSL2CJU2T.com.dingtalk.mac",
+    "MCMMetadataInfo": {
+        "SandboxProfileDataValidationInfo": {
+            "Parameters": {
+                "application_bundle": str(app),
+                "application_bundle_id": "5ZSL2CJU2T.com.dingtalk.mac",
+            }
+        }
+    },
+}
+with open(cont / ".com.apple.containermanagerd.metadata.plist", "wb") as f:
+    plistlib.dump(meta, f)
+PY
 
 printf '\n== apfs-spa selftest ==\n'
 printf 'sandbox: %s\n\n' "$SANDBOX"
@@ -72,11 +104,53 @@ assert "usage" in f0 and "deps" in f0 and "confidence" in f0
 w=[f for f in r["findings"] if "WeChat" in f.get("label","")]
 assert w
 assert w[0]["action"] in ("forbidden", "ask_first")
+# DingTalk: container id ≠ CFBundleIdentifier; must still find owner via metadata
+d=[f for f in r["findings"] if "DingTalk" in f.get("label","")]
+assert d, "DingTalk sandbox missing from findings"
+assert d[0]["usage"].get("owner_installed") is True, d[0].get("usage")
+assert d[0]["tier"] == "T4", (d[0]["tier"], d[0].get("classify_reasons"))
+assert d[0]["usage"].get("owner_match") == "container_metadata", d[0].get("usage")
 ' "$json_out"; then
   ok "scan --json schema + tier labels"
 else
   bad "scan --json schema + tier labels"
 fi
+
+# 1b) without metadata, alias CFBundle still finds DingTalk (Team-ID folder ≠ plist id)
+rm -f "$DT_CONT/.com.apple.containermanagerd.metadata.plist"
+json_alias="$SANDBOX/report-alias.json"
+"$SCAN" --json --quick -o "$json_alias" >/dev/null
+if python3 -c '
+import json,sys
+r=json.load(open(sys.argv[1]))
+d=[f for f in r["findings"] if "DingTalk" in f.get("label","")]
+assert d and d[0]["usage"].get("owner_installed") is True
+assert d[0]["tier"] == "T4"
+assert d[0]["usage"].get("owner_match") == "cf_bundle_alias", d[0].get("usage")
+' "$json_alias"; then
+  ok "DingTalk owner via CFBundle alias when metadata missing"
+else
+  bad "DingTalk owner via CFBundle alias when metadata missing"
+fi
+# restore metadata for later scans that may touch home fixtures
+python3 - "$DT_APP" "$DT_CONT" <<'PY'
+import plistlib, sys
+from pathlib import Path
+app, cont = Path(sys.argv[1]), Path(sys.argv[2])
+meta = {
+    "MCMMetadataIdentifier": "5ZSL2CJU2T.com.dingtalk.mac",
+    "MCMMetadataInfo": {
+        "SandboxProfileDataValidationInfo": {
+            "Parameters": {
+                "application_bundle": str(app),
+                "application_bundle_id": "5ZSL2CJU2T.com.dingtalk.mac",
+            }
+        }
+    },
+}
+with open(cont / ".com.apple.containermanagerd.metadata.plist", "wb") as f:
+    plistlib.dump(meta, f)
+PY
 
 # 2) dry-run must not move
 "$CLEAN" --tier 1 >/dev/null

@@ -20,7 +20,7 @@ Deep-dive knowledge that does not fit in SKILL.md. Read when you hit an unusual 
 | 6 | `~/Library/Developer/CoreSimulator` | 1–10G | T2 |
 | 7 | `~/.gradle/caches` | 1–2G | T1 |
 | 8 | `~/Library/Containers/com.kingsoft.wpsoffice.mac` | 1–3G | T4/T3 |
-| 9 | DingTalk `5ZSL2CJU2T.com.dingtalk.mac*` containers | <1G each | T3/T4 |
+| 9 | DingTalk `5ZSL2CJU2T.com.dingtalk.mac*` containers | often GBs | T4 if DingTalk.app installed (owner via container metadata / `com.alibaba.DingTalkMac` alias), else T3 |
 | 10 | `~/Library/Caches/<app>` — Lark, Google, Doubao, browser caches | 1–8G total | T1 |
 
 ## App uninstall ≠ data gone 卸载不删数据
@@ -166,6 +166,8 @@ Schema **v2** adds usage trajectory + ownership deps (not full call graphs):
 
 `action`: `safe_to_clean` | `ask_first` | `forbidden`.  
 Container heuristic: installed/recently-used owner → promote T3→T4; no owner → stay T3 orphan candidate.
+
+Owner resolution (containers): `containermanagerd` metadata `application_bundle` (path must still exist) → `mdfind`/`Info.plist` on folder id, Team-ID-stripped id, then `bundle-apps.json` `owner_cf_bundles` aliases. DingTalk: folder `5ZSL2CJU2T.com.dingtalk.mac` ≠ plist `com.alibaba.DingTalkMac`.
 
 ## Architecture Canvas GRAPH（实现备注）
 

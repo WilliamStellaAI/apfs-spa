@@ -12,6 +12,7 @@
 #
 set -u
 
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MODE=full
 JSON=0
 OUT=""
@@ -115,6 +116,10 @@ json_scan() {
     printf '%s\t%s\t%s\t%s\t%s\n' T2 ask_first "Android SDK" "$BASE/Library/Android/sdk" sdk
     printf '%s\t%s\t%s\t%s\t%s\n' T4 forbidden "WeChat sandbox" "$BASE/Library/Containers/com.tencent.xinWeChat" container
     printf '%s\t%s\t%s\t%s\t%s\n' T4 forbidden "WeCom sandbox" "$BASE/Library/Containers/com.tencent.WeWorkMac" container
+    # Provisional T3 — enricher promotes to T4 when owner app still installed
+    # (DingTalk: container id ≠ CFBundleIdentifier; see container_owner resolution)
+    printf '%s\t%s\t%s\t%s\t%s\n' T3 ask_first "DingTalk sandbox" "$BASE/Library/Containers/5ZSL2CJU2T.com.dingtalk.mac" container
+    printf '%s\t%s\t%s\t%s\t%s\n' T3 ask_first "DingTalk live" "$BASE/Library/Containers/5ZSL2CJU2T.com.dingtalk.mac.tblive" container
     printf '%s\t%s\t%s\t%s\t%s\n' T4 forbidden "Parallels VMs" "$BASE/Library/Parallels" vm
     printf '%s\t%s\t%s\t%s\t%s\n' T4 forbidden "Parallels home" "$BASE/Parallels" vm
   } > "$tmp.catalog"
@@ -134,7 +139,7 @@ json_scan() {
     du -sk "$BASE/Library/Containers"/* 2>/dev/null | sort -nr | head -12 | while read -r kb path; do
       base=$(basename "$path")
       case "$base" in
-        com.tencent.xinWeChat|com.tencent.WeWorkMac|com.tencent.wwmapp) continue ;;
+        com.tencent.xinWeChat|com.tencent.WeWorkMac|com.tencent.wwmapp|5ZSL2CJU2T.com.dingtalk.mac|5ZSL2CJU2T.com.dingtalk.mac.tblive) continue ;;
       esac
       [ "${kb:-0}" -lt 102400 ] && continue
       bytes=$((kb * 1024))
@@ -162,15 +167,19 @@ json_scan() {
   export APFS_SPA_MODE="$MODE"
   export APFS_SPA_BASE="$BASE"
   export APFS_SPA_SKIP_LSOF="${APFS_SPA_SKIP_LSOF:-0}"
+  export APFS_SPA_BUNDLE_MAP="${APFS_SPA_BUNDLE_MAP:-$ROOT/scripts/bundle-apps.json}"
 
   python3 - <<'PY'
-import json, os, time, subprocess, plistlib
+import json, os, re, time, subprocess, plistlib
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 FINDINGS_PATH = os.environ["APFS_SPA_FINDINGS"]
 SKIP_LSOF = os.environ.get("APFS_SPA_SKIP_LSOF", "0") == "1"
 RECENT_DAYS = 90
+# Apple Team ID prefix on Containers / Group Containers: 10 alnum + '.'
+TEAM_ID_PREFIX = re.compile(r"^[A-Z0-9]{10}\.")
+BUNDLE_MAP_PATH = Path(os.environ.get("APFS_SPA_BUNDLE_MAP", ""))
 
 def run(cmd, timeout=5):
     try:
@@ -241,7 +250,66 @@ def bundle_id_from_container(path):
     except (ValueError, IndexError):
         return None
 
-def find_app_for_bundle(bundle_id):
+def strip_team_id(cid):
+    if not cid:
+        return cid
+    return TEAM_ID_PREFIX.sub("", cid, count=1)
+
+def load_bundle_map():
+    try:
+        if BUNDLE_MAP_PATH.is_file():
+            return json.loads(BUNDLE_MAP_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+def alias_cf_bundles(container_id):
+    """Known CFBundleIdentifier aliases when container folder ≠ Info.plist id."""
+    m = load_bundle_map()
+    out = []
+    for key in (container_id, strip_team_id(container_id)):
+        if not key:
+            continue
+        info = m.get(key) or {}
+        for b in info.get("owner_cf_bundles") or []:
+            if b and b not in out:
+                out.append(b)
+    return out
+
+def container_dir(path):
+    """Resolve .../Containers/<id> from a container path."""
+    p = Path(path)
+    parts = list(p.parts)
+    try:
+        i = parts.index("Containers")
+        return Path(*parts[: i + 2])
+    except (ValueError, IndexError):
+        return p
+
+def app_from_container_metadata(container_path):
+    """
+    Authoritative owner path from containermanagerd metadata.
+    DingTalk etc.: folder id / signing id ≠ CFBundleIdentifier in Info.plist,
+    but Parameters.application_bundle still points at the .app.
+    """
+    cdir = container_dir(container_path)
+    meta = cdir / ".com.apple.containermanagerd.metadata.plist"
+    if not meta.is_file():
+        return None, None
+    try:
+        with open(meta, "rb") as fh:
+            pl = plistlib.load(fh)
+        info = pl.get("MCMMetadataInfo") or {}
+        params = (info.get("SandboxProfileDataValidationInfo") or {}).get("Parameters") or {}
+        app = params.get("application_bundle")
+        meta_bid = params.get("application_bundle_id")
+        if app and Path(app).exists():
+            return str(Path(app)), meta_bid
+    except Exception:
+        pass
+    return None, None
+
+def find_app_by_cf_bundle(bundle_id):
     if not bundle_id:
         return None
     code, out, _ = run(
@@ -252,8 +320,12 @@ def find_app_for_bundle(bundle_id):
         line = line.strip()
         if line.endswith(".app") and Path(line).exists():
             return line
-    # Fallback: scan common app dirs for matching Info.plist
-    roots = [Path("/Applications"), Path.home() / "Applications"]
+    # Fallback: scan common app dirs (+ BASE/Applications for selftest)
+    roots = [
+        Path("/Applications"),
+        Path.home() / "Applications",
+        Path(os.environ.get("APFS_SPA_BASE", "")) / "Applications",
+    ]
     for root in roots:
         if not root.is_dir():
             continue
@@ -266,6 +338,33 @@ def find_app_for_bundle(bundle_id):
             except Exception:
                 continue
     return None
+
+def find_app_for_bundle(bundle_id, container_path=None):
+    """
+    Resolve installed owner .app for a Containers/<id> folder.
+    Order: containermanagerd metadata → CFBundleIdentifier candidates
+    (exact folder, Team-ID-stripped, bundle-apps.json aliases) via mdfind / Info.plist.
+    Returns (app_path_or_None, how).
+    """
+    if container_path:
+        app, _meta_bid = app_from_container_metadata(container_path)
+        if app:
+            return app, "container_metadata"
+    candidates = []
+    for c in (bundle_id, strip_team_id(bundle_id), *alias_cf_bundles(bundle_id)):
+        if c and c not in candidates:
+            candidates.append(c)
+    for cand in candidates:
+        app = find_app_by_cf_bundle(cand)
+        if app:
+            if cand == bundle_id:
+                how = "cf_bundle"
+            elif cand == strip_team_id(bundle_id):
+                how = "cf_bundle_stripped_team_id"
+            else:
+                how = "cf_bundle_alias"
+            return app, how
+    return None, None
 
 def app_executable(app_path):
     info = Path(app_path) / "Contents" / "Info.plist"
@@ -369,10 +468,11 @@ def enrich(item):
     if kind == "container" or "/Containers/" in path:
         kind = "container"
         bundle_id = bundle_id_from_container(path)
-        app = find_app_for_bundle(bundle_id)
+        app, how = find_app_for_bundle(bundle_id, container_path=path)
         if app:
             usage["owner_app"] = app
             usage["owner_installed"] = True
+            usage["owner_match"] = how
             meta = mdls_keys(app, ["kMDItemLastUsedDate", "kMDItemUseCount"])
             usage["owner_last_used"] = meta.get("kMDItemLastUsedDate")
             usage["owner_use_count"] = meta.get("kMDItemUseCount")
@@ -492,6 +592,7 @@ report = {
     "evidence_notes": [
         "owner_app LastUsedDate/use_count beat path mtime for usage trajectory",
         "open_now from lsof/pgrep forces T4 forbidden",
+        "container owner: prefer containermanagerd application_bundle; then CFBundleIdentifier (exact / Team-ID-stripped / bundle-apps.json aliases)",
         "container without installed owner_app stays T3 ask_first (orphan candidate)",
         "deps are ownership/regen templates, not full call graphs",
     ],

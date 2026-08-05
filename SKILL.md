@@ -181,7 +181,7 @@ df -h /
 2. **只深挖高价值分支**：体积大、清了收益高、相对可恢复（缓存）或明确无主程序（疑似残留）。不要穷尽每个小文件。
 3. **典型展开路径**：  
    `整盘 → 已用 → 用户文件夹 → Library → {Containers, Application Support, Android, Caches} → 前 N 个大户叶子`。
-4. **沙盒必须翻译成人话**：`Containers/<bundle-id>` 标出 **来自哪个应用**（本地属主 / Spotlight 优先；认不出再用常见 Bundle 对照）。系统组件（如 `com.apple.geod`）标成系统名并归入「不要动」，不要误标成卸载残留。
+4. **沙盒必须翻译成人话**：`Containers/<id>` 标出 **来自哪个应用**。属主解析顺序：容器元数据 `application_bundle`（钉钉等文件夹名 ≠ `CFBundleIdentifier`）→ Spotlight/`Info.plist`（含去掉 Team ID 前缀）→ `bundle-apps.json` 别名。系统组件（如 `com.apple.geod`）标成系统名并归入「不要动」，不要误标成卸载残留。
 5. **对内仍用 T1–T4**；**对用户只说四类白话**（见下）。
 
 #### B. 四类标签 + 染色（怎么标）

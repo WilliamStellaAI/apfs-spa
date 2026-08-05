@@ -26,6 +26,7 @@ Quarantine UX (consequences / post-clean checklist / remind pending stamps) is i
 - Quarantine by default; purge only on explicit destroy  
 - System locks: WeChat/WeCom + Documents  
 - Persona intro before scan; quarantine UX in「隔离区与误判」  
+- **Container owner resolution:** metadata `application_bundle` → CFBundle (exact / strip Team ID / `owner_cf_bundles` aliases). Fixes DingTalk false orphan.  
 
 ## Agent must
 

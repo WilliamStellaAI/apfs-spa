@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import socket
 import time
 from datetime import datetime, timezone
@@ -164,6 +165,11 @@ def bundle_meta(bundles: dict, bundle: str | None) -> dict:
     if not bundle:
         return {}
     info = dict(bundles.get(bundle) or {})
+    if not info:
+        # Team-ID-prefixed Containers: try stripped key
+        stripped = re.sub(r"^[A-Z0-9]{10}\.", "", bundle)
+        if stripped != bundle:
+            info = dict(bundles.get(stripped) or {})
     if bundle in SYSTEM_BUNDLES:
         info["force_group"] = "不要动"
         info["force_advice"] = "不要删"

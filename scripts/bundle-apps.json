@@ -18,12 +18,21 @@
   "5ZSL2CJU2T.com.dingtalk.mac": {
     "app": "钉钉",
     "app_en": "DingTalk",
-    "vendor": "阿里巴巴"
+    "vendor": "阿里巴巴",
+    "owner_cf_bundles": ["com.alibaba.DingTalkMac"],
+    "note": "沙盒目录带 Team ID；主程序 CFBundleIdentifier 常为 com.alibaba.DingTalkMac，勿要求与文件夹名全等"
+  },
+  "com.dingtalk.mac": {
+    "app": "钉钉",
+    "app_en": "DingTalk",
+    "vendor": "阿里巴巴",
+    "owner_cf_bundles": ["com.alibaba.DingTalkMac"]
   },
   "5ZSL2CJU2T.com.dingtalk.mac.tblive": {
     "app": "钉钉（直播相关组件）",
     "app_en": "DingTalk Live",
-    "vendor": "阿里巴巴"
+    "vendor": "阿里巴巴",
+    "owner_cf_bundles": ["com.alibaba.DingTalkMac"]
   },
   "com.tencent.meeting": {
     "app": "腾讯会议",
