@@ -138,7 +138,7 @@ Windows/Linux；也不擅自清你的文档、相册、项目源码、正在用�
 | 组件 | 脚本 / 产物 | 作用 |
 |------|-------------|------|
 | 只读扫描 | `scripts/scan.sh --json` | schema v2：tier/action/usage/deps |
-| 架构图生成 | `scripts/render-architecture-canvas.sh` | JSON → Canvas（四色可筛清单、大小列、最近使用） |
+| 架构图生成 | `scripts/render-architecture-canvas.sh` | JSON → Canvas + HTML + Mermaid（四色清单同源） |
 | Canvas 模板 | `scripts/templates/architecture-canvas.body.tsx` | UI 契约，勿手写整份图 |
 | 治理账本 | `~/.cache/apfs-spa/ledger.sqlite` | snapshots / actions / locks |
 | 报告归档 | `~/.cache/apfs-spa/reports/snapshot-N.json` | 每次架构快照原文 |
@@ -171,9 +171,31 @@ df -h /
 
 ### 架构图完整能力（Canvas 契约 · 必读）
 
-用户说「扫一下 / 画架构图 / 腾点空间」时，**默认交付物是可交互的 Cursor Canvas 节点关系图**（不是聊天里贴一长串表格，也不是优先打开 HTML）。  
-文件名：`mac-disk-architecture.canvas.tsx`，放在当前工作区对应的  
-`~/.cursor/projects/<workspace>/canvases/`（遵循 Canvas skill：单文件、只从 `cursor/canvas` 导入、数据内嵌、无 `fetch`）。
+用户说「扫一下 / 画架构图 / 腾点空间」时，**默认交付物是占用关系架构图**（节点 DAG：整盘→已用→家目录→Library→大户叶子），外加同源清理建议清单。  
+**不是**聊天里只贴条形图/排行榜；**不是**把 `.canvas.tsx` 源码贴进对话。
+
+生成命令（一次写出三份同源产物）：
+
+```bash
+"$SKILL_DIR/scripts/render-architecture-canvas.sh" --report /tmp/apfs-spa.json
+# → *.canvas.tsx（Cursor 可交互）
+# → *.html（浏览器）
+# → *.md（Mermaid 架构 DAG + 清单表）
+```
+
+文件名默认：`mac-disk-architecture.canvas.tsx`（及同名 `.html` / `.md`）。  
+Cursor 下优先写到 `~/.cursor/projects/<workspace>/canvases/`；否则 `~/.cache/apfs-spa/`（Codex 等通用）。
+
+#### 多宿主怎么给用户看（硬规则）
+
+| 宿主 | 怎么交付架构图 | 禁止 |
+|------|----------------|------|
+| **Cursor** | 打开 `.canvas.tsx`（可点节点、四色筛选） | 把 TSX 当代码块贴进聊天 |
+| **Codex / WorkBuddy / 其它** | ① `open` 生成的 `.html`，或 ② 把 `.md` 里的 **Mermaid flowchart** 整段贴进聊天（再附清单表） | 把 `.canvas.tsx` 贴进聊天；用「只有横向条/排行榜、没有树/DAG」的自制报告冒充架构图 |
+| **任意** | 短摘要可以，但**必须保留「包含关系」树或 Mermaid** | 用户要架构图时只给 markdown 表格 |
+
+若聊天不渲染 Mermaid：仍贴代码块（用户可复制），并同时 `open` HTML。  
+静态样例页 `docs/mac-disk-architecture.html` 仅作演示；**实扫后必须用脚本新生成的 HTML/MD**。
 
 #### A. 下钻策略（画什么）
 
@@ -230,8 +252,8 @@ state.sh resume-hint / ledger.sh status   # 新会话：续作 + 看锁与快照
 scan.sh --json -o /tmp/apfs-spa.json
         ↓
 render-architecture-canvas.sh --report /tmp/apfs-spa.json
-        ↓  （强制写入 ledger 快照 + state；phase=awaiting_confirm）
-打开 Canvas；用户可 ledger.sh lock 上锁不想动的对象
+        ↓  （写出 canvas + html + mermaid；ledger 快照 + state；phase=awaiting_confirm）
+按宿主呈现：Cursor→Canvas；Codex→HTML 或贴 Mermaid.md（勿贴 TSX）
         ↓
 用户选定 → state.sh record-decision --approve-tier N
         ↓
@@ -243,8 +265,9 @@ df 验收 → state.sh record-verify
 节点建议字段：`id, title, size, kind, advice, category, detail, path?, app?, bundle?, open_now?, last_used?, unused?, tier?, action?`  
 清单建议字段：`title, size, group, category, advice, why, last_used, unused, open_now?, bundle?`
 
-**推荐 Agent 流程：** 先 `ledger.sh status` + `state.sh resume-hint` → `scan.sh --json` → **`render-architecture-canvas.sh`** → 等用户确认/上锁 → `clean.sh --tier N --yes` → `df`。  
-**禁止**仅靠 md 约定「别删某某」——上锁必须进 `ledger.sh`，由 `clean.sh` 硬拦截。
+**推荐 Agent 流程：** 先 `ledger.sh status` + `state.sh resume-hint` → `scan.sh --json` → **`render-architecture-canvas.sh`** → **按上表宿主呈现** → 等用户确认/上锁 → `clean.sh --tier N --yes` → `df`。  
+**禁止**仅靠 md 约定「别删某某」——上锁必须进 `ledger.sh`，由 `clean.sh` 硬拦截。  
+**禁止**在非 Cursor 宿主把架构图「翻译」成只有条形图、丢掉整盘→叶子的包含关系。
 
 ### 治理账本（SQLite · 脚本硬闸门）
 
@@ -298,6 +321,8 @@ df 验收 → state.sh record-verify
 - 不要把系统沙盒标成「卸载残留」。
 - 不要在未确认时把「先确认 / 不要动」画成可一键清。
 - 不要用平铺长列表代替节点关系图（清单是图的补充，不是替代）。
+- 不要把 `.canvas.tsx` 源码贴进聊天（Cursor 打开文件；其它宿主用 HTML / Mermaid）。
+- 不要在 Codex 等环境用「仅条形图/排行榜」替换架构树后声称已交付关系图。
 
 ### 回滚怎么做（若误删 / 误隔离）
 

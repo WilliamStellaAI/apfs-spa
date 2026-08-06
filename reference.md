@@ -174,11 +174,11 @@ Owner resolution (containers): `containermanagerd` metadata `application_bundle`
 权威 UX 契约在 `SKILL.md`「架构图完整能力」。重建请用：
 
 ```bash
-./scripts/render-architecture-canvas.sh --report /tmp/apfs-spa.json \
-  --out ~/.cursor/projects/<workspace>/canvases/mac-disk-architecture.canvas.tsx
+./scripts/render-architecture-canvas.sh --report /tmp/apfs-spa.json
+# writes .canvas.tsx + .html + .md (Mermaid). Codex: open HTML or paste Mermaid; never paste TSX.
 ```
 
-脚本会：读 JSON v2 → 生成内嵌 `GRAPH` → 拼 `templates/architecture-canvas.body.tsx` → 写 Canvas；并（默认）调用 `state.sh record-scan` + `record-canvas`。
+脚本会：读 JSON v2 → 生成内嵌 `GRAPH` → 拼 `templates/architecture-canvas.body.tsx` → 写 Canvas/HTML/Mermaid；并（默认）调用 `state.sh record-scan` + `record-canvas`。
 
 ```ts
 {

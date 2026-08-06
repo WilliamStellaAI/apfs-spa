@@ -27,7 +27,7 @@
 ```text
 管家自我介绍（若有未粉碎隔离区，开场必提）
     → 你说「开扫」
-    → 扫描 + Canvas 占用关系图（四色可筛选）
+    → 扫描 + 占用关系图（Cursor=Canvas；Codex=HTML/Mermaid，勿贴 TSX）
     → 你决定：锁哪些 / 清哪些
     → 确认后 clean（默认进隔离区；App 可能像重置，空间暂不腾空）
     → 人话清单：时间戳 / 如何恢复；你点头后再粉碎
@@ -164,8 +164,10 @@ mac-storage-governance/          # GitHub 品牌目录名常为 apfs-spa
 
 ## 架构图
 
-- **默认：** Cursor Canvas（`render-architecture-canvas.sh` 生成），契约见 `SKILL.md`「架构图完整能力」
-- **可选：** `open docs/mac-disk-architecture.html`（`?lang=zh` 强制中文）
+- **同源三件套：** `render-architecture-canvas.sh` → `.canvas.tsx` + `.html` + `.md`（Mermaid）
+- **Cursor：** 打开 Canvas（可点节点、四色筛选）；契约见 `SKILL.md`「架构图完整能力」
+- **Codex / 其它：** `open` HTML，或把 `.md` 里的 Mermaid 贴进聊天；**不要**贴 TSX，**不要**只用条形图冒充架构图
+- **静态样例：** `docs/mac-disk-architecture.html`（`?lang=zh`）；实扫以脚本新生成文件为准
 
 ---
 

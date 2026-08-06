@@ -476,6 +476,186 @@ def render_tsx(graph: dict) -> str:
     return IMPORTS + graph_js + body
 
 
+def _esc(s: str) -> str:
+    return (
+        str(s or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def _mermaid_id(nid: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_]", "_", nid)[:64] or "n"
+
+
+def _cat_fill(cat: str) -> str:
+    return {
+        "dont": "#fecaca",
+        "orphan": "#fed7aa",
+        "ask": "#fde68a",
+        "safe": "#bbf7d0",
+        "neutral": "#e7e5e4",
+    }.get(cat or "neutral", "#e7e5e4")
+
+
+def render_mermaid(graph: dict) -> str:
+    """Chat-safe architecture DAG for Codex / markdown hosts (no Cursor Canvas)."""
+    nodes = {n["id"]: n for n in graph.get("nodes") or []}
+    lines = [
+        "```mermaid",
+        "flowchart TD",
+        "  %% apfs-spa architecture · 同 Canvas GRAPH · 勿改成条形图替代",
+    ]
+    for n in graph.get("nodes") or []:
+        mid = _mermaid_id(n["id"])
+        title = (n.get("title") or n["id"]).replace('"', "'")
+        size = n.get("size") or ""
+        advice = n.get("advice") or ""
+        label = f"{title}<br/>{size}"
+        if advice:
+            label += f"<br/>{advice}"
+        lines.append(f'  {mid}["{label}"]')
+    for e in graph.get("edges") or []:
+        a, b = e.get("from"), e.get("to")
+        if a in nodes and b in nodes:
+            lines.append(f"  {_mermaid_id(a)} --> {_mermaid_id(b)}")
+    for n in graph.get("nodes") or []:
+        mid = _mermaid_id(n["id"])
+        fill = _cat_fill(n.get("category") or "neutral")
+        lines.append(f"  style {mid} fill:{fill},stroke:#78716c,color:#1c1917")
+    lines.append("```")
+    lines.append("")
+    lines.append("图例：红系=不要动 · 橙系=疑似残留 · 黄系=先确认 · 绿系=可以清")
+    lines.append("")
+    lines.append("### 清理建议清单（与图同源）")
+    lines.append("")
+    lines.append("| 名称 | 大小 | 建议 | 多久没用 / 最近使用 |")
+    lines.append("|------|------|------|---------------------|")
+    for c in graph.get("checklist") or []:
+        name = (c.get("title") or "").replace("|", "/")
+        why = (c.get("why") or "").replace("|", "/")
+        if why:
+            name = f"{name} — {why}"
+        size = c.get("size") or "—"
+        advice = c.get("advice") or c.get("group") or "—"
+        unused = c.get("unused") or "—"
+        last = c.get("last_used") or "—"
+        lines.append(f"| {name} | {size} | {advice} | {unused} / {last} |")
+    lines.append("")
+    disk = graph.get("disk") or {}
+    lines.append(
+        f"磁盘：容量 {disk.get('size_h', '—')} · 已用 {disk.get('used_h', '—')} · "
+        f"可用 {disk.get('avail_h', '—')} · 探测日 {graph.get('asOf', '—')}"
+    )
+    lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+def render_html(graph: dict) -> str:
+    """Browser-openable architecture page for non-Cursor hosts."""
+    disk = graph.get("disk") or {}
+    nodes = {n["id"]: n for n in graph.get("nodes") or []}
+    children: dict[str, list[str]] = {}
+    for e in graph.get("edges") or []:
+        children.setdefault(e["from"], []).append(e["to"])
+
+    def tree_html(nid: str, depth: int = 0) -> str:
+        n = nodes.get(nid) or {"id": nid, "title": nid}
+        cat = n.get("category") or "neutral"
+        pad = 12 + depth * 18
+        tip = _esc(n.get("detail") or n.get("path") or "")
+        return (
+            f'<div class="node cat-{_esc(cat)}" style="margin-left:{pad}px" title="{tip}">'
+            f'<span class="dot"></span>'
+            f'<strong>{_esc(n.get("title"))}</strong>'
+            f' <span class="size">{_esc(n.get("size") or "—")}</span>'
+            f' <span class="adv">{_esc(n.get("advice") or "")}</span>'
+            f"</div>"
+            + "".join(tree_html(c, depth + 1) for c in children.get(nid, []))
+        )
+
+    roots = [n["id"] for n in graph.get("nodes") or [] if n["id"] == "disk"]
+    if not roots and nodes:
+        roots = [next(iter(nodes))]
+
+    rows = []
+    for c in graph.get("checklist") or []:
+        rows.append(
+            "<tr>"
+            f'<td>{_esc(c.get("title"))}<div class="sub">{_esc(c.get("why") or "")}</div></td>'
+            f'<td class="num">{_esc(c.get("size") or "—")}</td>'
+            f'<td>{_esc(c.get("advice") or c.get("group") or "—")}</td>'
+            f'<td>{_esc(c.get("unused") or "—")} / {_esc(c.get("last_used") or "—")}</td>'
+            "</tr>"
+        )
+
+    return f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mac 磁盘占用关系图 · apfs-spa</title>
+<style>
+  :root {{ --bg:#f6f4ef; --ink:#1c1917; --muted:#78716c; --card:#fffdf8; --line:#e7e0d5; }}
+  body {{ margin:0; font:15px/1.5 "PingFang SC","Noto Sans SC",sans-serif; color:var(--ink);
+    background:radial-gradient(900px 500px at 0% 0%,#e8f5f2,transparent 55%),var(--bg); }}
+  .wrap {{ max-width:960px; margin:0 auto; padding:28px 20px 64px; }}
+  h1 {{ font-size:26px; margin:0 0 8px; }}
+  .muted {{ color:var(--muted); }}
+  .stats {{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:16px 0; }}
+  .stat {{ background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; }}
+  .stat .v {{ font-size:20px; font-weight:650; }}
+  .stat .l {{ font-size:12px; color:var(--muted); }}
+  .card {{ background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; margin:16px 0; }}
+  .node {{ padding:6px 0; border-left:3px solid #a8a29e; padding-left:10px; margin:4px 0; }}
+  .node .size {{ font-variant-numeric:tabular-nums; margin-left:8px; }}
+  .node .adv {{ color:var(--muted); font-size:12px; margin-left:8px; }}
+  .dot {{ display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; background:#a8a29e; }}
+  .cat-dont {{ border-left-color:#b91c1c; }} .cat-dont .dot {{ background:#b91c1c; }}
+  .cat-orphan {{ border-left-color:#c2410c; }} .cat-orphan .dot {{ background:#c2410c; }}
+  .cat-ask {{ border-left-color:#a16207; }} .cat-ask .dot {{ background:#a16207; }}
+  .cat-safe {{ border-left-color:#15803d; }} .cat-safe .dot {{ background:#15803d; }}
+  table {{ width:100%; border-collapse:collapse; font-size:13px; }}
+  th,td {{ padding:8px; border-top:1px solid var(--line); text-align:left; vertical-align:top; }}
+  th {{ color:var(--muted); }} td.num {{ text-align:right; white-space:nowrap; }}
+  .sub {{ color:var(--muted); font-size:12px; }}
+  .legend span {{ margin-right:12px; font-size:12px; color:var(--muted); }}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>磁盘占用关系图</h1>
+  <p class="muted">与 Cursor Canvas 同源数据。连线树表示「包含 / 属于」。探测日：{_esc(graph.get("asOf"))} · 主机：{_esc(graph.get("host"))}</p>
+  <div class="stats">
+    <div class="stat"><div class="v">{_esc(disk.get("size_h"))}</div><div class="l">整盘大约容量</div></div>
+    <div class="stat"><div class="v">{_esc(disk.get("used_h"))}</div><div class="l">已经用掉</div></div>
+    <div class="stat"><div class="v">{_esc(disk.get("avail_h"))}</div><div class="l">还能用</div></div>
+  </div>
+  <p class="legend">
+    <span>● 不要动</span><span>● 疑似残留</span><span>● 先确认</span><span>● 可以清</span>
+  </p>
+  <div class="card">
+    <h2 style="margin:0 0 10px;font-size:16px">占用结构（架构树）</h2>
+    {"".join(tree_html(r) for r in roots)}
+  </div>
+  <div class="card">
+    <h2 style="margin:0 0 10px;font-size:16px">清理建议清单</h2>
+    <table>
+      <thead><tr><th>名称</th><th>大小</th><th>建议</th><th>多久没用 / 最近使用</th></tr></thead>
+      <tbody>
+        {"".join(rows) or "<tr><td colspan=4 class=muted>暂无清单项</td></tr>"}
+      </tbody>
+    </table>
+  </div>
+  <p class="muted small">由 render_architecture_canvas.py 生成 · 非 Cursor 宿主请用本页或 Mermaid，勿把 .canvas.tsx 当聊天附件贴出。</p>
+</div>
+</body>
+</html>
+"""
+
+
 def load_session(state_path: Path | None) -> dict | None:
     if not state_path or not state_path.exists():
         return None
@@ -494,11 +674,13 @@ def load_session(state_path: Path | None) -> dict | None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Render mac-disk-architecture Canvas from scan JSON")
+    ap = argparse.ArgumentParser(description="Render mac-disk-architecture Canvas / HTML / Mermaid from scan JSON")
     ap.add_argument("--report", required=True, help="scan.sh --json report path")
     ap.add_argument("--out", required=True, help="output .canvas.tsx path")
     ap.add_argument("--state", default=os.environ.get("APFS_SPA_STATE"), help="optional state.json for session strip")
     ap.add_argument("--graph-out", help="also write GRAPH json")
+    ap.add_argument("--html-out", help="also write browser HTML architecture page")
+    ap.add_argument("--mermaid-out", help="also write Mermaid+checklist markdown for chat hosts")
     args = ap.parse_args()
 
     report = json.loads(Path(args.report).read_text(encoding="utf-8"))
@@ -510,6 +692,23 @@ def main() -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(tsx, encoding="utf-8")
     print(out)
+
+    html_out = Path(args.html_out) if args.html_out else out.with_suffix(".html")
+    # .canvas.tsx → prefer sibling mac-disk-architecture.html not .canvas.html
+    if not args.html_out and str(out).endswith(".canvas.tsx"):
+        html_out = out.with_name(out.name.replace(".canvas.tsx", ".html"))
+    html_out.parent.mkdir(parents=True, exist_ok=True)
+    html_out.write_text(render_html(graph), encoding="utf-8")
+    print(html_out)
+
+    mermaid_out = Path(args.mermaid_out) if args.mermaid_out else None
+    if not args.mermaid_out and str(out).endswith(".canvas.tsx"):
+        mermaid_out = out.with_name(out.name.replace(".canvas.tsx", ".md"))
+    elif not args.mermaid_out:
+        mermaid_out = out.with_suffix(".md")
+    mermaid_out.parent.mkdir(parents=True, exist_ok=True)
+    mermaid_out.write_text(render_mermaid(graph), encoding="utf-8")
+    print(mermaid_out)
 
     if args.graph_out:
         Path(args.graph_out).write_text(json.dumps(graph, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

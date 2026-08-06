@@ -208,10 +208,12 @@ else
   bad "state records clean phase"
 fi
 
-# 10) render canvas from JSON
+# 10) render canvas from JSON (+ html + mermaid for non-Cursor hosts)
 RENDER="$ROOT/scripts/render-architecture-canvas.sh"
 canvas_out="$SANDBOX/mac-disk-architecture.canvas.tsx"
 "$RENDER" --report "$json_out" --out "$canvas_out" --no-state >/dev/null
+html_out="$SANDBOX/mac-disk-architecture.html"
+md_out="$SANDBOX/mac-disk-architecture.md"
 if python3 -c '
 from pathlib import Path
 import sys
@@ -221,10 +223,15 @@ assert "const GRAPH" in t
 assert "export default function" in t
 assert "清理建议清单" in t
 assert "不要动" in t
-' "$canvas_out"; then
-  ok "render-architecture-canvas emits tsx"
+h=Path(sys.argv[2]).read_text()
+assert "占用结构" in h and "清理建议清单" in h
+m=Path(sys.argv[3]).read_text()
+assert "```mermaid" in m and "flowchart TD" in m
+assert "清理建议清单" in m
+' "$canvas_out" "$html_out" "$md_out"; then
+  ok "render-architecture-canvas emits tsx+html+mermaid"
 else
-  bad "render-architecture-canvas emits tsx"
+  bad "render-architecture-canvas emits tsx+html+mermaid"
 fi
 
 # 11) state scan+canvas+resume
