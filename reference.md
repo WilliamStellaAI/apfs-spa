@@ -175,10 +175,12 @@ Owner resolution (containers): `containermanagerd` metadata `application_bundle`
 
 ```bash
 ./scripts/render-architecture-canvas.sh --report /tmp/apfs-spa.json
-# writes .canvas.tsx + .html + .md (Mermaid). Codex: open HTML or paste Mermaid; never paste TSX.
+# → .canvas.tsx + SVG DAG .html + Mermaid .md
+# → preview URL (default http://127.0.0.1:8766/) via preview-architecture.sh
+# Cursor: open Canvas. Other hosts: paste preview URL only (not .html path). Never paste TSX.
 ```
 
-脚本会：读 JSON v2 → 生成内嵌 `GRAPH` → 拼 `templates/architecture-canvas.body.tsx` → 写 Canvas/HTML/Mermaid；并（默认）调用 `state.sh record-scan` + `record-canvas`。
+脚本会：读 JSON v2 → 生成内嵌 `GRAPH` → 写 Canvas/HTML/Mermaid → 起预览；并（默认）调用 `state.sh record-scan` + `record-canvas`。
 
 ```ts
 {

@@ -174,13 +174,14 @@ df -h /
 用户说「扫一下 / 画架构图 / 腾点空间」时，**默认交付物是占用关系架构图**（节点 DAG：整盘→已用→家目录→Library→大户叶子），外加同源清理建议清单。  
 **不是**聊天里只贴条形图/排行榜；**不是**把 `.canvas.tsx` 源码贴进对话。
 
-生成命令（一次写出三份同源产物）：
+生成命令（一次写出三份同源产物 + 预览网址）：
 
 ```bash
 "$SKILL_DIR/scripts/render-architecture-canvas.sh" --report /tmp/apfs-spa.json
-# → *.canvas.tsx（Cursor 可交互）
-# → *.html（浏览器）
-# → *.md（Mermaid 架构 DAG + 清单表）
+# → *.canvas.tsx（Cursor）
+# → *.html（SVG 节点图；对人交付用 preview URL，不主推文件路径）
+# → *.md（Mermaid）
+# → 预览网址默认 http://127.0.0.1:8766/
 ```
 
 文件名默认：`mac-disk-architecture.canvas.tsx`（及同名 `.html` / `.md`）。  
@@ -191,11 +192,11 @@ Cursor 下优先写到 `~/.cursor/projects/<workspace>/canvases/`；否则 `~/.c
 | 宿主 | 怎么交付架构图 | 禁止 |
 |------|----------------|------|
 | **Cursor** | 打开 `.canvas.tsx`（可点节点、四色筛选） | 把 TSX 当代码块贴进聊天 |
-| **Codex / WorkBuddy / 其它** | ① `open` 生成的 `.html`，或 ② 把 `.md` 里的 **Mermaid flowchart** 整段贴进聊天（再附清单表） | 把 `.canvas.tsx` 贴进聊天；用「只有横向条/排行榜、没有树/DAG」的自制报告冒充架构图 |
-| **任意** | 短摘要可以，但**必须保留「包含关系」树或 Mermaid** | 用户要架构图时只给 markdown 表格 |
+| **Codex / WorkBuddy / 其它** | `preview-architecture.sh` 起预览后，**只贴网址**（默认 `http://127.0.0.1:8766/`）；须先确认可打开。Cursor 可另开 Canvas | 把 `.html` 文件路径当主交付；贴未确认可打开的链接；用缩进列表/条形图冒充节点关系图 |
+| **任意** | 短摘要可以，但**必须保留包含关系**（节点图 / Mermaid） | 用户要架构图时只给 markdown 表格 |
 
-若聊天不渲染 Mermaid：仍贴代码块（用户可复制），并同时 `open` HTML。  
-静态样例页 `docs/mac-disk-architecture.html` 仅作演示；**实扫后必须用脚本新生成的 HTML/MD**。
+聊天若不渲染 Mermaid：可贴 Mermaid 代码块，并同时给出预览网址。  
+`docs/mac-disk-architecture.html` 仅为静态样例；实扫须用脚本新生成的产物。
 
 #### A. 下钻策略（画什么）
 
@@ -252,8 +253,8 @@ state.sh resume-hint / ledger.sh status   # 新会话：续作 + 看锁与快照
 scan.sh --json -o /tmp/apfs-spa.json
         ↓
 render-architecture-canvas.sh --report /tmp/apfs-spa.json
-        ↓  （写出 canvas + html + mermaid；ledger 快照 + state；phase=awaiting_confirm）
-按宿主呈现：Cursor→Canvas；Codex→HTML 或贴 Mermaid.md（勿贴 TSX）
+        ↓  （写出 canvas + html + mermaid；起预览；ledger 快照 + state；phase=awaiting_confirm）
+按宿主呈现：Cursor→Canvas；其它→只贴预览网址（须可打开）；可辅以 Mermaid
         ↓
 用户选定 → state.sh record-decision --approve-tier N
         ↓
@@ -267,7 +268,8 @@ df 验收 → state.sh record-verify
 
 **推荐 Agent 流程：** 先 `ledger.sh status` + `state.sh resume-hint` → `scan.sh --json` → **`render-architecture-canvas.sh`** → **按上表宿主呈现** → 等用户确认/上锁 → `clean.sh --tier N --yes` → `df`。  
 **禁止**仅靠 md 约定「别删某某」——上锁必须进 `ledger.sh`，由 `clean.sh` 硬拦截。  
-**禁止**在非 Cursor 宿主把架构图「翻译」成只有条形图、丢掉整盘→叶子的包含关系。
+**禁止**交付架构图时只给条形图/排行榜/缩进列表，丢掉整盘→叶子的包含关系。  
+**禁止**对人主推 `.html` 路径；非 Cursor 宿主贴预览网址。
 
 ### 治理账本（SQLite · 脚本硬闸门）
 
@@ -321,8 +323,9 @@ df 验收 → state.sh record-verify
 - 不要把系统沙盒标成「卸载残留」。
 - 不要在未确认时把「先确认 / 不要动」画成可一键清。
 - 不要用平铺长列表代替节点关系图（清单是图的补充，不是替代）。
-- 不要把 `.canvas.tsx` 源码贴进聊天（Cursor 打开文件；其它宿主用 HTML / Mermaid）。
-- 不要在 Codex 等环境用「仅条形图/排行榜」替换架构树后声称已交付关系图。
+- 不要把 `.canvas.tsx` 源码贴进聊天（Cursor 打开文件；其它宿主贴预览网址）。
+- 不要把 `.html` 文件路径当主交付；须贴可打开的预览网址（默认 `http://127.0.0.1:8766/`）。
+- 不要用「仅条形图/排行榜/缩进列表」替换节点关系图后声称已交付架构图。
 
 ### 回滚怎么做（若误删 / 误隔离）
 

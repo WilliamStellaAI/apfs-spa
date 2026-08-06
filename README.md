@@ -164,10 +164,11 @@ mac-storage-governance/          # GitHub 品牌目录名常为 apfs-spa
 
 ## 架构图
 
-- **同源三件套：** `render-architecture-canvas.sh` → `.canvas.tsx` + `.html` + `.md`（Mermaid）
-- **Cursor：** 打开 Canvas（可点节点、四色筛选）；契约见 `SKILL.md`「架构图完整能力」
-- **Codex / 其它：** `open` HTML，或把 `.md` 里的 Mermaid 贴进聊天；**不要**贴 TSX，**不要**只用条形图冒充架构图
-- **静态样例：** `docs/mac-disk-architecture.html`（`?lang=zh`）；实扫以脚本新生成文件为准
+- **同源三件套：** `render-architecture-canvas.sh` → `.canvas.tsx` + SVG 节点图 `.html` + `.md`
+- **对人交付：** 只贴预览网址 `http://127.0.0.1:8766/`（先起服务并确认可访问）；**不要**把 html 文件路径当主输出
+- **Cursor：** 也可打开 Canvas
+- **备用：** Mermaid `.md`；固定文件副本仅排障用
+- **静态样例：** `docs/mac-disk-architecture.html`；实扫以脚本新生成为准
 
 ---
 

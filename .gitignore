@@ -2,3 +2,9 @@ __pycache__/
 *.pyc
 .DS_Store
 *.canvas.data.json
+*.canvas.status.json
+canvases/
+docs/latest-architecture.html
+docs/mac-disk-architecture.canvas.tsx
+docs/mac-disk-architecture.md
+**/.apfs-spa-preview/

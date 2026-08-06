@@ -8,8 +8,13 @@
 #       --out ~/.cursor/projects/<ws>/canvases/mac-disk-architecture.canvas.tsx
 #
 # Always also writes sibling:
-#   *.html  — 浏览器打开（Codex / WorkBuddy / 任意宿主）
-#   *.md    — Mermaid 架构 DAG + 清单（可直接贴进支持 Mermaid 的聊天）
+#   *.html  — Canvas-parity SVG node DAG
+#   *.md    — Mermaid DAG + checklist
+#   preview URL via scripts/preview-architecture.sh (default http://127.0.0.1:8766/)
+#
+# Flags:
+#   --no-open   skip preview server / URL open
+#   --no-state  skip state writes
 #
 set -euo pipefail
 
@@ -18,6 +23,7 @@ REPORT=""
 OUT=""
 GRAPH_OUT=""
 NO_STATE=0
+NO_OPEN=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -25,8 +31,9 @@ while [ $# -gt 0 ]; do
     --out) OUT="${2:-}"; shift 2 ;;
     --graph-out) GRAPH_OUT="${2:-}"; shift 2 ;;
     --no-state) NO_STATE=1; shift ;;
+    --no-open) NO_OPEN=1; shift ;;
     -h|--help)
-      sed -n '2,16p' "$0"
+      sed -n '2,20p' "$0"
       exit 0
       ;;
     *) echo "unknown: $1" >&2; exit 1 ;;
@@ -40,13 +47,26 @@ pick_out() {
     echo "$APFS_SPA_CANVAS_OUT"
     return
   fi
-  # Cursor: any project canvases dir under ~/.cursor/projects
-  local d
+
+  # Prefer Cursor canvases that look like this skill / apfs-spa workspace
+  local d best=""
   for d in "$HOME"/.cursor/projects/*/canvases; do
     [ -d "$d" ] || continue
-    echo "$d/mac-disk-architecture.canvas.tsx"
-    return
+    case "$d" in
+      *mac-storage-governance*|*apfs-spa*)
+        echo "$d/mac-disk-architecture.canvas.tsx"
+        return
+        ;;
+    esac
   done
+
+  # Else: most recently modified canvases/ (avoid picking a random stale project first)
+  best="$(ls -1dt "$HOME"/.cursor/projects/*/canvases 2>/dev/null | head -1 || true)"
+  if [ -n "$best" ] && [ -d "$best" ]; then
+    echo "$best/mac-disk-architecture.canvas.tsx"
+    return
+  fi
+
   # Portable default (Codex / WorkBuddy / CLI)
   mkdir -p "$HOME/.cache/apfs-spa"
   echo "$HOME/.cache/apfs-spa/mac-disk-architecture.canvas.tsx"
@@ -88,8 +108,32 @@ fi
 echo "canvas:  $CANVAS_PATH"
 echo "html:    $HTML_PATH"
 echo "mermaid: $MD_PATH"
+
+# Publish HTML preview as a stable local URL (not a file path as primary UX)
+CACHE_DIR="${APFS_SPA_HOME:-$HOME}/.cache/apfs-spa"
+mkdir -p "$CACHE_DIR" 2>/dev/null || true
+LATEST="$CACHE_DIR/latest-architecture.html"
+if cp -f "$HTML_PATH" "$LATEST" 2>/dev/null; then
+  :
+else
+  LATEST="$(dirname "$HTML_PATH")/latest-architecture.html"
+  cp -f "$HTML_PATH" "$LATEST" 2>/dev/null || LATEST="$HTML_PATH"
+fi
+
+PREVIEW_URL=""
+if [ "$NO_OPEN" = 0 ]; then
+  PREVIEW_URL="$("$ROOT/scripts/preview-architecture.sh" "$HTML_PATH" 2>/tmp/apfs-spa-preview-meta.txt | tail -1)" || true
+fi
+[ -n "$PREVIEW_URL" ] || PREVIEW_URL="http://127.0.0.1:${APFS_SPA_PREVIEW_PORT:-8766}/"
+
+echo "latest:  $LATEST"
+echo "url:     $PREVIEW_URL"
+if [ -f /tmp/apfs-spa-preview-meta.txt ]; then
+  cat /tmp/apfs-spa-preview-meta.txt >&2 || true
+fi
+
 echo ""
-echo "PRESENTATION (Agent — do not paste .canvas.tsx into chat):"
-echo "  Cursor:     open the .canvas.tsx (interactive DAG)"
-echo "  Codex/etc:  open HTML in browser, OR paste the .md Mermaid block into chat"
-echo "  Forbidden:  rewrite as bar-chart-only report that drops the architecture tree"
+echo "PRESENTATION (Agent):"
+echo "  Primary URL: $PREVIEW_URL"
+echo "  Cursor: open .canvas.tsx"
+echo "  Do not lead with .html file paths; do not substitute bar charts / indented trees for the node DAG"

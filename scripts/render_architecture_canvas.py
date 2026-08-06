@@ -553,95 +553,210 @@ def render_mermaid(graph: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def render_html(graph: dict) -> str:
-    """Browser-openable architecture page for non-Cursor hosts."""
-    disk = graph.get("disk") or {}
-    nodes = {n["id"]: n for n in graph.get("nodes") or []}
-    children: dict[str, list[str]] = {}
-    for e in graph.get("edges") or []:
-        children.setdefault(e["from"], []).append(e["to"])
+def _cat_colors(cat: str) -> tuple[str, str, str]:
+    """bar, soft fill, badge text color"""
+    return {
+        "dont": ("#ef4444", "#450a0a", "#fecaca"),
+        "orphan": ("#f97316", "#431407", "#fed7aa"),
+        "ask": ("#eab308", "#422006", "#fde68a"),
+        "safe": ("#22c55e", "#052e16", "#bbf7d0"),
+        "neutral": ("#94a3b8", "#1e293b", "#e2e8f0"),
+    }.get(cat or "neutral", ("#94a3b8", "#1e293b", "#e2e8f0"))
 
-    def tree_html(nid: str, depth: int = 0) -> str:
-        n = nodes.get(nid) or {"id": nid, "title": nid}
-        cat = n.get("category") or "neutral"
-        pad = 12 + depth * 18
-        tip = _esc(n.get("detail") or n.get("path") or "")
-        return (
-            f'<div class="node cat-{_esc(cat)}" style="margin-left:{pad}px" title="{tip}">'
-            f'<span class="dot"></span>'
-            f'<strong>{_esc(n.get("title"))}</strong>'
-            f' <span class="size">{_esc(n.get("size") or "—")}</span>'
-            f' <span class="adv">{_esc(n.get("advice") or "")}</span>'
-            f"</div>"
-            + "".join(tree_html(c, depth + 1) for c in children.get(nid, []))
+
+def layout_dag(graph: dict, node_w: int = 168, node_h: int = 82, hgap: int = 18, vgap: int = 52):
+    """Layered top-down DAG positions (Canvas-like)."""
+    nodes = list(graph.get("nodes") or [])
+    by_id = {n["id"]: n for n in nodes}
+    children: dict[str, list[str]] = {}
+    incoming: dict[str, int] = {n["id"]: 0 for n in nodes}
+    for e in graph.get("edges") or []:
+        a, b = e.get("from"), e.get("to")
+        if a in by_id and b in by_id:
+            children.setdefault(a, []).append(b)
+            incoming[b] = incoming.get(b, 0) + 1
+
+    roots = [n["id"] for n in nodes if incoming.get(n["id"], 0) == 0]
+    if "disk" in by_id:
+        roots = ["disk"] + [r for r in roots if r != "disk"]
+
+    layer: dict[str, int] = {}
+    q: list[str] = []
+    for r in roots:
+        layer[r] = 0
+        q.append(r)
+    i = 0
+    while i < len(q):
+        u = q[i]
+        i += 1
+        for v in children.get(u, []):
+            nl = layer[u] + 1
+            if v not in layer or nl > layer[v]:
+                # keep first (shortest) layer
+                if v not in layer:
+                    layer[v] = nl
+                    q.append(v)
+
+    for n in nodes:
+        if n["id"] not in layer:
+            layer[n["id"]] = (max(layer.values()) + 1) if layer else 0
+
+    layers: dict[int, list[str]] = {}
+    for nid, L in layer.items():
+        layers.setdefault(L, []).append(nid)
+
+    def sort_key(nid: str):
+        n = by_id[nid]
+        return (0 if nid in ("free", "used", "home", "lib") else 1, n.get("title") or nid)
+
+    max_row_w = 0
+    for L, ids in layers.items():
+        ids.sort(key=sort_key)
+        layers[L] = ids
+        max_row_w = max(max_row_w, len(ids) * node_w + max(0, len(ids) - 1) * hgap)
+
+    width = max(int(max_row_w + 48), 720)
+    pos: dict[str, tuple[float, float, float, float]] = {}
+    for L in sorted(layers):
+        ids = layers[L]
+        row_w = len(ids) * node_w + max(0, len(ids) - 1) * hgap
+        start_x = (width - row_w) / 2
+        y = 28 + L * (node_h + vgap)
+        for idx, nid in enumerate(ids):
+            x = start_x + idx * (node_w + hgap)
+            pos[nid] = (x, y, float(node_w), float(node_h))
+
+    height = 28 + (max(layer.values()) + 1) * (node_h + vgap) + 24
+    edges_xy: list[tuple[float, float, float, float]] = []
+    for e in graph.get("edges") or []:
+        a, b = e.get("from"), e.get("to")
+        if a in pos and b in pos:
+            ax, ay, aw, ah = pos[a]
+            bx, by, bw, _bh = pos[b]
+            edges_xy.append((ax + aw / 2, ay + ah, bx + bw / 2, by))
+    return pos, width, height, edges_xy, by_id
+
+
+def render_html(graph: dict) -> str:
+    """Browser page with Canvas-like SVG DAG (not a folder tree list)."""
+    disk = graph.get("disk") or {}
+    pos, width, height, edges_xy, by_id = layout_dag(graph)
+
+    lines_svg = []
+    for x1, y1, x2, y2 in edges_xy:
+        lines_svg.append(
+            f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
+            f'stroke="#64748b" stroke-width="1.5" />'
         )
 
-    roots = [n["id"] for n in graph.get("nodes") or [] if n["id"] == "disk"]
-    if not roots and nodes:
-        roots = [next(iter(nodes))]
+    nodes_svg = []
+    details_js = {}
+    for nid, (x, y, w, h) in pos.items():
+        n = by_id.get(nid) or {"id": nid, "title": nid}
+        cat = n.get("category") or "neutral"
+        bar, soft, badge = _cat_colors(cat)
+        title = _esc((n.get("title") or nid)[:18])
+        size = _esc(n.get("size") or "—")
+        advice = _esc((n.get("advice") or "")[:14])
+        details_js[nid] = {
+            "title": n.get("title"),
+            "size": n.get("size"),
+            "advice": n.get("advice"),
+            "category": cat,
+            "detail": n.get("detail"),
+            "path": n.get("path"),
+            "app": n.get("app"),
+            "last_used": n.get("last_used"),
+            "unused": n.get("unused"),
+            "open_now": n.get("open_now"),
+        }
+        nodes_svg.append(
+            f'<g class="n" data-id="{_esc(nid)}" transform="translate({x:.1f},{y:.1f})" style="cursor:pointer">'
+            f'<rect width="{w}" height="{h}" rx="10" fill="{soft}" stroke="#475569" stroke-width="1"/>'
+            f'<rect width="5" height="{h}" rx="2" fill="{bar}"/>'
+            f'<text x="14" y="22" fill="#f8fafc" font-size="12" font-weight="600">{title}</text>'
+            f'<text x="14" y="42" fill="#94a3b8" font-size="11">{size}</text>'
+            f'<rect x="12" y="{h-26}" width="{max(40, min(w-24, 8 + len(advice) * 7))}" height="18" rx="4" fill="{bar}" opacity="0.25"/>'
+            f'<text x="16" y="{h-13}" fill="{badge}" font-size="10">{advice}</text>'
+            f"</g>"
+        )
 
     rows = []
     for c in graph.get("checklist") or []:
+        cat = c.get("category") or "neutral"
+        bar, _soft, _b = _cat_colors(cat)
         rows.append(
             "<tr>"
-            f'<td>{_esc(c.get("title"))}<div class="sub">{_esc(c.get("why") or "")}</div></td>'
+            f'<td><span class="dot" style="background:{bar}"></span>{_esc(c.get("title"))}'
+            f'<div class="sub">{_esc(c.get("why") or "")}</div></td>'
             f'<td class="num">{_esc(c.get("size") or "—")}</td>'
             f'<td>{_esc(c.get("advice") or c.get("group") or "—")}</td>'
             f'<td>{_esc(c.get("unused") or "—")} / {_esc(c.get("last_used") or "—")}</td>'
             "</tr>"
         )
 
+    details_json = json.dumps(details_js, ensure_ascii=False)
+
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Mac 磁盘占用关系图 · apfs-spa</title>
+<title>磁盘占用关系图 · apfs-spa</title>
 <style>
-  :root {{ --bg:#f6f4ef; --ink:#1c1917; --muted:#78716c; --card:#fffdf8; --line:#e7e0d5; }}
-  body {{ margin:0; font:15px/1.5 "PingFang SC","Noto Sans SC",sans-serif; color:var(--ink);
-    background:radial-gradient(900px 500px at 0% 0%,#e8f5f2,transparent 55%),var(--bg); }}
-  .wrap {{ max-width:960px; margin:0 auto; padding:28px 20px 64px; }}
-  h1 {{ font-size:26px; margin:0 0 8px; }}
+  :root {{ --bg:#0f172a; --ink:#e2e8f0; --muted:#94a3b8; --card:#1e293b; --line:#334155; }}
+  * {{ box-sizing: border-box; }}
+  body {{ margin:0; font:14px/1.5 "PingFang SC","Noto Sans SC",sans-serif; color:var(--ink); background:var(--bg); }}
+  .wrap {{ max-width:1200px; margin:0 auto; padding:24px 16px 56px; }}
+  h1 {{ font-size:24px; margin:0 0 6px; }}
   .muted {{ color:var(--muted); }}
-  .stats {{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:16px 0; }}
+  .stats {{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:14px 0; }}
+  @media (max-width:800px) {{ .stats {{ grid-template-columns:1fr 1fr; }} }}
   .stat {{ background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; }}
   .stat .v {{ font-size:20px; font-weight:650; }}
-  .stat .l {{ font-size:12px; color:var(--muted); }}
-  .card {{ background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; margin:16px 0; }}
-  .node {{ padding:6px 0; border-left:3px solid #a8a29e; padding-left:10px; margin:4px 0; }}
-  .node .size {{ font-variant-numeric:tabular-nums; margin-left:8px; }}
-  .node .adv {{ color:var(--muted); font-size:12px; margin-left:8px; }}
-  .dot {{ display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; background:#a8a29e; }}
-  .cat-dont {{ border-left-color:#b91c1c; }} .cat-dont .dot {{ background:#b91c1c; }}
-  .cat-orphan {{ border-left-color:#c2410c; }} .cat-orphan .dot {{ background:#c2410c; }}
-  .cat-ask {{ border-left-color:#a16207; }} .cat-ask .dot {{ background:#a16207; }}
-  .cat-safe {{ border-left-color:#15803d; }} .cat-safe .dot {{ background:#15803d; }}
+  .stat .l {{ font-size:12px; color:var(--muted); margin-top:2px; }}
+  .card {{ background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; margin:16px 0; overflow:auto; }}
+  .legend {{ display:flex; flex-wrap:wrap; gap:14px; margin:8px 0 4px; font-size:12px; color:var(--muted); }}
+  .legend i {{ display:inline-block; width:8px; height:8px; border-radius:99px; margin-right:6px; }}
+  .dag-scroll {{ overflow:auto; max-width:100%; border:1px solid var(--line); border-radius:10px; background:#020617; }}
+  #detail {{ min-height:72px; padding:10px 12px; border:1px dashed var(--line); border-radius:10px; margin-top:12px; color:var(--muted); }}
+  #detail.active {{ border-style:solid; color:var(--ink); background:#020617; }}
   table {{ width:100%; border-collapse:collapse; font-size:13px; }}
   th,td {{ padding:8px; border-top:1px solid var(--line); text-align:left; vertical-align:top; }}
-  th {{ color:var(--muted); }} td.num {{ text-align:right; white-space:nowrap; }}
+  th {{ color:var(--muted); }} td.num {{ text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }}
   .sub {{ color:var(--muted); font-size:12px; }}
-  .legend span {{ margin-right:12px; font-size:12px; color:var(--muted); }}
+  .dot {{ display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }}
+  .n:hover rect:first-child {{ stroke:#94a3b8; }}
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>磁盘占用关系图</h1>
-  <p class="muted">与 Cursor Canvas 同源数据。连线树表示「包含 / 属于」。探测日：{_esc(graph.get("asOf"))} · 主机：{_esc(graph.get("host"))}</p>
+  <p class="muted">与 Cursor Canvas 同源 · 点击节点查看说明 · 连线=包含/属于 · 探测日 {_esc(graph.get("asOf"))}</p>
   <div class="stats">
     <div class="stat"><div class="v">{_esc(disk.get("size_h"))}</div><div class="l">整盘大约容量</div></div>
     <div class="stat"><div class="v">{_esc(disk.get("used_h"))}</div><div class="l">已经用掉</div></div>
     <div class="stat"><div class="v">{_esc(disk.get("avail_h"))}</div><div class="l">还能用</div></div>
+    <div class="stat"><div class="v">点节点</div><div class="l">查看方式</div></div>
   </div>
-  <p class="legend">
-    <span>● 不要动</span><span>● 疑似残留</span><span>● 先确认</span><span>● 可以清</span>
-  </p>
-  <div class="card">
-    <h2 style="margin:0 0 10px;font-size:16px">占用结构（架构树）</h2>
-    {"".join(tree_html(r) for r in roots)}
+  <div class="legend">
+    <span><i style="background:#ef4444"></i>不要动</span>
+    <span><i style="background:#f97316"></i>疑似卸载残留</span>
+    <span><i style="background:#eab308"></i>先确认</span>
+    <span><i style="background:#22c55e"></i>可以清</span>
   </div>
   <div class="card">
-    <h2 style="margin:0 0 10px;font-size:16px">清理建议清单</h2>
+    <h2 style="margin:0 0 10px;font-size:15px">占用结构（可点击）</h2>
+    <div class="dag-scroll">
+      <svg width="{width}" height="{height}" viewBox="0 0 {width} {height}">
+        {"".join(lines_svg)}
+        {"".join(nodes_svg)}
+      </svg>
+    </div>
+    <div id="detail">点击上方节点，查看大小、建议与路径。</div>
+  </div>
+  <div class="card">
+    <h2 style="margin:0 0 10px;font-size:15px">清理建议清单</h2>
     <table>
       <thead><tr><th>名称</th><th>大小</th><th>建议</th><th>多久没用 / 最近使用</th></tr></thead>
       <tbody>
@@ -649,8 +764,23 @@ def render_html(graph: dict) -> str:
       </tbody>
     </table>
   </div>
-  <p class="muted small">由 render_architecture_canvas.py 生成 · 非 Cursor 宿主请用本页或 Mermaid，勿把 .canvas.tsx 当聊天附件贴出。</p>
 </div>
+<script>
+const DETAILS = {details_json};
+const el = document.getElementById('detail');
+document.querySelectorAll('g.n').forEach(g => {{
+  g.addEventListener('click', () => {{
+    const d = DETAILS[g.dataset.id] || {{}};
+    el.className = 'active';
+    el.innerHTML = '<strong>' + (d.title||'') + '</strong> · ' + (d.size||'—') +
+      '<div style="margin-top:6px">建议：' + (d.advice||'—') +
+      (d.unused ? ' · ' + d.unused : '') +
+      (d.last_used ? ' · 最近 ' + d.last_used : '') + '</div>' +
+      (d.detail ? '<div style="margin-top:6px;color:#94a3b8">' + d.detail + '</div>' : '') +
+      (d.path ? '<div style="margin-top:6px;font-size:12px;color:#64748b">' + d.path + '</div>' : '');
+  }});
+}});
+</script>
 </body>
 </html>
 """

@@ -211,7 +211,7 @@ fi
 # 10) render canvas from JSON (+ html + mermaid for non-Cursor hosts)
 RENDER="$ROOT/scripts/render-architecture-canvas.sh"
 canvas_out="$SANDBOX/mac-disk-architecture.canvas.tsx"
-"$RENDER" --report "$json_out" --out "$canvas_out" --no-state >/dev/null
+"$RENDER" --report "$json_out" --out "$canvas_out" --no-state --no-open >/dev/null
 html_out="$SANDBOX/mac-disk-architecture.html"
 md_out="$SANDBOX/mac-disk-architecture.md"
 if python3 -c '
@@ -224,14 +224,15 @@ assert "export default function" in t
 assert "清理建议清单" in t
 assert "不要动" in t
 h=Path(sys.argv[2]).read_text()
-assert "占用结构" in h and "清理建议清单" in h
+assert "占用结构（可点击）" in h and "<svg" in h and "g class=\"n\"" in h
+assert "架构树" not in h
 m=Path(sys.argv[3]).read_text()
 assert "```mermaid" in m and "flowchart TD" in m
 assert "清理建议清单" in m
 ' "$canvas_out" "$html_out" "$md_out"; then
-  ok "render-architecture-canvas emits tsx+html+mermaid"
+  ok "render-architecture-canvas emits tsx+html(DAG)+mermaid"
 else
-  bad "render-architecture-canvas emits tsx+html+mermaid"
+  bad "render-architecture-canvas emits tsx+html(DAG)+mermaid"
 fi
 
 # 11) state scan+canvas+resume
